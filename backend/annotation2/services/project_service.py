@@ -14,11 +14,11 @@ def create_project(name: str, labels: List[str]) -> ProjectModel:
         q = select(Project).where(Project.name == name)
         if s.execute(q).scalar_one_or_none():
             raise ValueError("project name exists")
-        p = Project(name=name, labels=list(labels))
+        p = Project(name=name, labels=list(labels), relation_types=[])
         s.add(p)
         s.commit()
         s.refresh(p)
-        return ProjectModel(id=p.id, name=p.name, labels=p.labels, created_at=p.created_at)
+        return ProjectModel(id=p.id, name=p.name, labels=p.labels, relation_types=p.relation_types, created_at=p.created_at)
     finally:
         s.close()
 
@@ -28,7 +28,7 @@ def list_projects() -> List[ProjectModel]:
     try:
         q = select(Project).order_by(Project.id.desc())
         rows = s.execute(q).scalars().all()
-        return [ProjectModel(id=r.id, name=r.name, labels=r.labels, created_at=r.created_at) for r in rows]
+        return [ProjectModel(id=r.id, name=r.name, labels=r.labels, relation_types=r.relation_types, created_at=r.created_at) for r in rows]
     finally:
         s.close()
 
@@ -53,7 +53,7 @@ def update_labels(project_id: int, labels: List[str]) -> ProjectModel:
         p = s.get(Project, project_id)
         if not p:
             raise ValueError("project not found")
-        return ProjectModel(id=p.id, name=p.name, labels=p.labels, created_at=p.created_at)
+        return ProjectModel(id=p.id, name=p.name, labels=p.labels, relation_types=p.relation_types, created_at=p.created_at)
     finally:
         s.close()
 
@@ -64,6 +64,19 @@ def get_project(project_id: int) -> ProjectModel:
         p = s.get(Project, project_id)
         if not p:
             raise ValueError("project not found")
-        return ProjectModel(id=p.id, name=p.name, labels=p.labels, created_at=p.created_at)
+        return ProjectModel(id=p.id, name=p.name, labels=p.labels, relation_types=p.relation_types, created_at=p.created_at)
+    finally:
+        s.close()
+
+def update_relation_types(project_id: int, relation_types: List[str]) -> ProjectModel:
+    init_db()
+    s = get_session()
+    try:
+        s.execute(update(Project).where(Project.id == project_id).values(relation_types=list(relation_types)).execution_options(synchronize_session="fetch"))
+        s.commit()
+        p = s.get(Project, project_id)
+        if not p:
+            raise ValueError("project not found")
+        return ProjectModel(id=p.id, name=p.name, labels=p.labels, relation_types=p.relation_types, created_at=p.created_at)
     finally:
         s.close()

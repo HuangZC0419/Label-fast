@@ -1,0 +1,34 @@
+0 verbose cli D:\nodejs\node.exe D:\nodejs\node_modules\npm\bin\npm-cli.js
+1 info using npm@10.2.3
+2 info using node@v18.19.0
+3 timing npm:load:whichnode Completed in 2ms
+4 timing config:load:defaults Completed in 3ms
+5 timing config:load:file:D:\nodejs\node_modules\npm\npmrc Completed in 9ms
+6 timing config:load:builtin Completed in 9ms
+7 timing config:load:cli Completed in 2ms
+8 timing config:load:env Completed in 0ms
+9 timing config:load:project Completed in 1ms
+10 timing config:load:file:C:\Users\30894\.npmrc Completed in 8ms
+11 timing config:load:user Completed in 8ms
+12 timing config:load:file:D:\nodejs\node_global\etc\npmrc Completed in 1ms
+13 timing config:load:global Completed in 1ms
+14 timing config:load:setEnvs Completed in 1ms
+15 timing config:load Completed in 25ms
+16 timing npm:load:configload Completed in 25ms
+17 timing config:load:flatten Completed in 2ms
+18 timing npm:load:mkdirpcache Completed in 1ms
+19 timing npm:load:mkdirplogs Completed in 0ms
+20 verbose title npm prefix
+21 verbose argv "prefix" "--global"
+22 timing npm:load:setTitle Completed in 1ms
+23 timing npm:load:display Completed in 0ms
+24 verbose logfile logs-max:10 dir:e:\Annotation2\annotation2-ui\.npm-cache\_logs\2025-11-28T09_15_34_661Z-
+25 verbose logfile e:\Annotation2\annotation2-ui\.npm-cache\_logs\2025-11-28T09_15_34_661Z-debug-0.log
+26 timing npm:load:logFile Completed in 10ms
+27 timing npm:load:timers Completed in 0ms
+28 timing npm:load:configScope Completed in 0ms
+29 timing npm:load Completed in 97ms
+30 timing command:prefix Completed in 1ms
+31 verbose exit 0
+32 timing npm Completed in 894ms
+33 info ok

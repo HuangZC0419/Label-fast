@@ -1,1 +1,1 @@
-from . import project_service, document_service, annotation_service, export_service
+from . import project_service, document_service, annotation_service, relation_service, import_service, export_service

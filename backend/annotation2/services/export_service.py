@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Optional
 from sqlalchemy import select
 from ..storage.db import get_session, init_db
-from ..storage.schema import Document, Annotation
+from ..storage.schema import Document, Annotation, Relation
 
 def export_project(project_id: int, fmt: str = "jsonl", output_dir: Optional[str] = None) -> str:
     init_db()
@@ -21,10 +21,17 @@ def export_project(project_id: int, fmt: str = "jsonl", output_dir: Optional[str
             path = os.path.join(base_dir, f"project_{project_id}_{ts}.jsonl")
             with open(path, "w", encoding="utf-8") as f:
                 for d in docs:
-                    q_anns = select(Annotation).where(Annotation.doc_id == d.id).order_by(Annotation.start.asc())
+                    q_anns = select(Annotation).where(Annotation.doc_id == d.id).order_by(Annotation.start.asc(), Annotation.end.asc())
                     anns = s.execute(q_anns).scalars().all()
-                    labels = [[a.start, a.end, a.label] for a in anns]
-                    obj = {"text": d.text, "labels": labels}
+                    entities = [{"start": a.start, "end": a.end, "label": a.label} for a in anns]
+                    idx = {a.id: i for i, a in enumerate(anns)}
+                    q_rels = select(Relation).where(Relation.doc_id == d.id).order_by(Relation.id.asc())
+                    rels = s.execute(q_rels).scalars().all()
+                    relations = []
+                    for r in rels:
+                        if r.from_ann_id in idx and r.to_ann_id in idx:
+                            relations.append({"from_entity": idx[r.from_ann_id], "to_entity": idx[r.to_ann_id], "relation": r.relation_type})
+                    obj = {"text": d.text, "entities": entities, "relations": relations}
                     f.write(json_dumps(obj) + "\n")
             return path
         if fmt.lower() in {"tsv", "csv"}:
