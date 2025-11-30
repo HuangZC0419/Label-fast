@@ -7,6 +7,7 @@ class ProjectModel(BaseModel):
     name: str
     labels: List[str] = Field(default_factory=list)
     relation_types: List[str] = Field(default_factory=list)
+    allow_overlap: bool = False
     created_at: datetime
 
 class DocumentModel(BaseModel):

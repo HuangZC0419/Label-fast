@@ -10,6 +10,7 @@ class Project(Base):
     name: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
     labels: Mapped[list] = mapped_column(JSON, nullable=False, default=[])
     relation_types: Mapped[list] = mapped_column(JSON, nullable=False, default=[])
+    allow_overlap: Mapped[bool] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 class Document(Base):
