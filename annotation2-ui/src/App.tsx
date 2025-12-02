@@ -26,8 +26,8 @@ export default function App() {
   const [projectName, setProjectName] = useState("Demo")
   const [labelsInput, setLabelsInput] = useState("PER,LOC,ORG")
   const [relationTypesInput, setRelationTypesInput] = useState("LOCATED_IN,WORKS_AT,FOUNDED_IN")
-  const labels = useMemo(() => labelsInput.split(",").map(s => s.trim()).filter(Boolean), [labelsInput])
-  const relationTypes = useMemo(() => relationTypesInput.split(",").map(s => s.trim()).filter(Boolean), [relationTypesInput])
+  const labels = useMemo(() => labelsInput.split(/[，,;；]/).map(s => s.trim()).filter(Boolean), [labelsInput])
+  const relationTypes = useMemo(() => relationTypesInput.split(/[，,;；]/).map(s => s.trim()).filter(Boolean), [relationTypesInput])
   const palette = useMemo(() => {
     const base = ["#ffb3ba", "#baffc9", "#bae1ff", "#ffffba", "#ffc9de", "#c9fff2"]
     const m: Record<string, string> = {}
@@ -97,13 +97,20 @@ export default function App() {
   const [relDashed, setRelDashed] = useState<boolean>(false)
   
 
-  const onMouseUp = () => {
+  const onMouseUp = (e: React.MouseEvent<HTMLDivElement>) => {
     if (relPickerOpen || dragFromId !== null) return
     if (relFromId !== null) setRelFromId(null)
+    e.preventDefault()
+    e.stopPropagation()
     const off = getOffsets()
     if (!off) return
     setPending(off)
     setLabelPickerOpen(true)
+    requestAnimationFrame(() => {
+      const sel = window.getSelection()
+      sel?.removeAllRanges()
+      containerRef.current?.focus()
+    })
   }
 
   const addSpan = (label: string) => {
@@ -376,6 +383,9 @@ export default function App() {
   }
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null
+      const editable = !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)
+      if (editable) return
       if (e.ctrlKey && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); return }
       if (e.key === 'Delete') { if (selectedSpanId !== null) { removeSpanById(selectedSpanId); setSelectedSpanId(null); setRelFromId(null); } return }
       if (e.key === 'Escape') { e.preventDefault(); setSelectedSpanId(null); setPending(null); setLabelPickerOpen(false); setRelPickerOpen(false); setRelFromId(null); return }
@@ -384,10 +394,11 @@ export default function App() {
       const d = Number(e.key)
       if (!Number.isNaN(d) && d >= 1 && d <= 9) {
         const idx = d - 1
-        if (e.ctrlKey) {
+        if (e.ctrlKey || e.metaKey) {
+          e.preventDefault(); e.stopPropagation()
           if (relPickerOpen && pendingRel && relationTypes[idx]) addRelation(relationTypes[idx])
         } else {
-          if (labelPickerOpen && pending && labels[idx]) addSpan(labels[idx])
+          if (labelPickerOpen && pending && labels[idx]) { e.preventDefault(); addSpan(labels[idx]) }
         }
         return
       }
@@ -397,7 +408,7 @@ export default function App() {
         return
       }
     }
-    window.addEventListener('keydown', onKey)
+    window.addEventListener('keydown', onKey, { capture: true })
     return () => window.removeEventListener('keydown', onKey)
   }, [labelPickerOpen, pending, relPickerOpen, pendingRel, labels, relationTypes, selectedSpanId, spans, relations, history, currentIndex])
 
@@ -408,7 +419,7 @@ export default function App() {
   }
 
   return (
-    <div style={{ display: "flex", gap: 16, padding: 16 }}>
+    <div style={{ display: "flex", gap: 24, padding: 16 }}>
       <div style={{ width: 300 }}>
         <div style={{ display: "grid", gap: 8 }}>
           <input value={projectName} onChange={e => setProjectName(e.target.value)} placeholder="Project name" />
@@ -470,7 +481,7 @@ export default function App() {
           </div>
         </div>
       </div>
-      <div style={{ flex: 1, position: "relative" }}>
+      <div style={{ flex: 1, position: "relative", marginLeft: 12, maxWidth: 980 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
           <button onClick={prevItem}>Prev</button>
           <button onClick={nextItem}>Next</button>
@@ -478,7 +489,7 @@ export default function App() {
           <button onClick={markCompleted}>Mark completed</button>
           <div>{currentIndex>=0 && itemStatuses[currentIndex]==='completed'?"✅":null}</div>
         </div>
-        <div ref={containerRef} onMouseUp={onMouseUp} onContextMenu={onContainerContextMenu} style={{ fontSize: fontSize, lineHeight: lineH, userSelect: "text", cursor: "text", border: "1px solid #ddd", padding: 12, minHeight: 160, position: "relative", whiteSpace: "pre-wrap" }}>
+        <div ref={containerRef} tabIndex={0} onMouseUp={onMouseUp} onContextMenu={onContainerContextMenu} style={{ fontSize: fontSize, lineHeight: lineH, userSelect: "text", cursor: "text", border: "1px solid #ddd", borderRadius: 6, padding: 12, minHeight: 160, position: "relative", whiteSpace: "pre-wrap", overflow: "hidden", background: "#fff", maxWidth: "100%" }}>
           {chars.map((ch, i) => (
             <span key={i} ref={el => { charRefs.current[i] = el }}>
               {ch}

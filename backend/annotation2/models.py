@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List
+from typing import List, Optional
 from datetime import datetime
 
 class ProjectModel(BaseModel):
@@ -14,9 +14,9 @@ class DocumentModel(BaseModel):
     id: int
     project_id: int
     text: str
-    status: str | None = None
-    source_file: str | None = None
-    unit_index: int | None = None
+    status: Optional[str] = None
+    source_file: Optional[str] = None
+    unit_index: Optional[int] = None
     created_at: datetime
 
 class AnnotationModel(BaseModel):

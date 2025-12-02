@@ -19,8 +19,8 @@ class Document(Base):
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), index=True, nullable=False)
     text: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
-    source_file: Mapped[str | None] = mapped_column(String(1024), nullable=True)
-    unit_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    source_file: Mapped[str] = mapped_column(String(1024), nullable=True)
+    unit_index: Mapped[int] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 class Annotation(Base):

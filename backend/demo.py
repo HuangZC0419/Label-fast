@@ -1,6 +1,15 @@
 from annotation2.services import project_service, document_service, annotation_service, relation_service, export_service
 
 def main():
+    # Clean up existing 'Demo' project if it exists
+    projects = project_service.list_projects()
+    for old_p in projects:
+        if old_p.name == "Demo":
+            print(f"Deleting existing project: {old_p.name} (ID: {old_p.id})")
+            project_service.delete_project(old_p.id)
+            break
+
+    print("Creating new project: Demo")
     p = project_service.create_project("Demo", ["PER","LOC","ORG"])
     p = project_service.update_relation_types(p.id, ["LOCATED_IN","WORKS_AT","FOUNDED_IN"]) 
     docs = document_service.import_texts(p.id, ["Mike lives in America.", "Apple is a company.", "Beijing is in China."])
