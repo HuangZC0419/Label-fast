@@ -26,8 +26,9 @@ export default function App() {
   const [projectName, setProjectName] = useState("Demo")
   const [labelsInput, setLabelsInput] = useState("PER,LOC,ORG")
   const [relationTypesInput, setRelationTypesInput] = useState("LOCATED_IN,WORKS_AT,FOUNDED_IN")
-  const labels = useMemo(() => labelsInput.split(/[，,;；]/).map(s => s.trim()).filter(Boolean), [labelsInput])
-  const relationTypes = useMemo(() => relationTypesInput.split(/[，,;；]/).map(s => s.trim()).filter(Boolean), [relationTypesInput])
+  const labels = useMemo(() => (labelsInput || "").split(/[，,;；]/).map(s => s.trim()).filter(Boolean), [labelsInput])
+  const relationTypes = useMemo(() => (relationTypesInput || "").split(/[，,;；]/).map(s => s.trim()).filter(Boolean), [relationTypesInput])
+  const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set())
   const palette = useMemo(() => {
     const base = ["#ffb3ba", "#baffc9", "#bae1ff", "#ffffba", "#ffc9de", "#c9fff2"]
     const m: Record<string, string> = {}
@@ -51,13 +52,20 @@ export default function App() {
   const spanSegments = (start: number, end: number, rects: {x:number;y:number;w:number;h:number}[]) => {
     const out: {x:number;y:number;w:number;h:number}[] = []
     if (start < 0 || end <= start || rects.length === 0) return out
+    
+    // Safety cap
+    const safeEnd = Math.min(end, rects.length)
+    
     let i = start
-    while (i < end) {
+    while (i < safeEnd) {
       const r0 = rects[i]
+      if (!r0) { i++; continue } // Should not happen if bounded by rects.length, but safe
+      
       let w = r0.w
       let j = i + 1
-      while (j < end) {
+      while (j < safeEnd) {
         const r = rects[j]
+        if (!r) break
         if (Math.abs(r.y - r0.y) < 0.5) { w += r.w; j++ } else break
       }
       out.push({ x: r0.x, y: r0.y, w, h: r0.h })
@@ -72,7 +80,61 @@ export default function App() {
   const [relations, setRelations] = useState<Relation[]>([])
   const [relationsByIndex, setRelationsByIndex] = useState<{[key:number]: Relation[]}>({})
   const [items, setItems] = useState<string[]>([])
+  const [docIds, setDocIds] = useState<number[]>([])
+  const [pid, setPid] = useState<number>(2)
   const [itemStatuses, setItemStatuses] = useState<{[key:number]: "pending"|"in_progress"|"completed"}>({})
+
+  useEffect(() => {
+    fetch('http://localhost:8000/api/projects/id-by-name/Demo')
+      .then(r => r.ok ? r.json() : {id: 2})
+      .then(d => {
+        const id = d.id
+        setPid(id)
+        return fetch(`http://localhost:8000/api/projects/${id}/sync`)
+      })
+      .then(r => {
+        if (!r.ok) throw new Error("Failed to load")
+        return r.json()
+      })
+      .then(data => {
+        if (data.project) {
+          setProjectName(data.project.name)
+          const l = data.project.labels
+          setLabelsInput(Array.isArray(l) ? l.join(",") : (l || "PER,LOC,ORG"))
+          const r = data.project.relation_types
+          setRelationTypesInput(Array.isArray(r) ? r.join(",") : (r || "LOCATED_IN,WORKS_AT,FOUNDED_IN"))
+        }
+        if (data.documents && Array.isArray(data.documents)) {
+           const newItems: string[] = []
+           const newDocIds: number[] = []
+           const newStatuses: any = {}
+           const newSpans: any = {}
+           const newRels: any = {}
+           
+           data.documents.forEach((d: any, i: number) => {
+             newItems.push(d.text)
+             newDocIds.push(d.id)
+             newStatuses[i] = d.status
+             newSpans[i] = d.spans || []
+             newRels[i] = d.relations || []
+           })
+           
+           setItems(newItems)
+           setDocIds(newDocIds)
+           setItemStatuses(newStatuses)
+           setSpansByIndex(newSpans)
+           setRelationsByIndex(newRels)
+           
+           if (newItems.length > 0) {
+             setCurrentIndex(0)
+             setText(newItems[0])
+             setSpans(newSpans[0] || [])
+             setRelations(newRels[0] || [])
+           }
+        }
+      })
+      .catch(e => console.error("Sync load error:", e))
+  }, [])
   const [currentIndex, setCurrentIndex] = useState<number>(-1)
   const [splitMode, setSplitMode] = useState<"as_is"|"paragraph"|"sentence"|"length">("sentence")
   const [fixedLength, setFixedLength] = useState<number>(500)
@@ -295,9 +357,11 @@ export default function App() {
     if (all.length) {
       const idx0 = items.length
       const newItems = [...items, ...all]
+      const newDocIds = [...docIds, ...all.map(() => -1)]
       const st = { ...itemStatuses }
       for (let i = 0; i < all.length; i++) st[idx0 + i] = "pending"
       setItems(newItems)
+      setDocIds(newDocIds)
       setItemStatuses(st)
       if (currentIndex < 0) {
         setCurrentIndex(0)
@@ -418,10 +482,125 @@ export default function App() {
     highlightIds.add(relations[hoverRelIdx].toId)
   }
 
+  const onToggleSelect = (i: number, e: React.MouseEvent) => {
+    e.stopPropagation()
+    const newSet = new Set(selectedIndices)
+    if (newSet.has(i)) newSet.delete(i)
+    else newSet.add(i)
+    setSelectedIndices(newSet)
+  }
+
+  const onClearAll = async () => {
+    if (!confirm("Are you sure you want to delete ALL data? This cannot be undone.")) return
+    try {
+        const res = await fetch(`http://localhost:8000/api/projects/${pid}/clear`, { method: 'DELETE' })
+        if (!res.ok) throw new Error("Clear failed")
+        window.location.reload()
+    } catch(e) {
+        alert("Clear failed: " + e)
+    }
+  }
+
+  const onDeleteDoc = async (i: number, e: React.MouseEvent) => {
+      e.stopPropagation()
+      if (!confirm("Delete this document?")) return
+      const docId = docIds[i]
+      if (docId && docId !== -1) {
+          try {
+              const res = await fetch(`http://localhost:8000/api/documents/${docId}`, { method: 'DELETE' })
+              if (!res.ok) throw new Error("Delete failed")
+          } catch(e) {
+              alert("Delete failed: " + e)
+              return
+          }
+      }
+      // Remove from local state regardless of server status (if it was local only)
+      // Ideally reload to be safe, but for better UX let's reload
+      window.location.reload()
+  }
+
+  const onExport = () => {
+    const idsToExport = selectedIndices.size > 0 
+        ? Array.from(selectedIndices).map(i => docIds[i]).filter(id => id && id !== -1)
+        : [] // If none selected, export all (default behavior handled by backend if list is empty/null? No, backend needs explicit list or None)
+    
+    // Logic: If selected, export selected. If none selected, export all.
+    
+    let url = `http://localhost:8000/api/projects/${pid}/export`
+    if (idsToExport.length > 0) {
+        const query = idsToExport.map(id => `doc_ids=${id}`).join("&")
+        url += `?${query}`
+    } else if (selectedIndices.size > 0) {
+         // User selected items but they have no ID (not saved)?
+         alert("Selected items are not saved. Please save first.")
+         return
+    }
+    
+    window.open(url, '_blank')
+  }
+
+  const onSave = async () => {
+    // Construct latest data snapshot to ensure current document changes are included
+    const nextSpans = { ...spansByIndex }
+    const nextRels = { ...relationsByIndex }
+    if (currentIndex >= 0) {
+        nextSpans[currentIndex] = spans
+        nextRels[currentIndex] = relations
+    }
+    // Also update state to reflect these changes in UI logic immediately if needed
+    setSpansByIndex(nextSpans)
+    setRelationsByIndex(nextRels)
+
+    const payload = {
+      project: { 
+        name: projectName, 
+        labels: labelsInput.split(/[，,;；]/).map(s => s.trim()).filter(Boolean), 
+        relation_types: relationTypesInput.split(/[，,;；]/).map(s => s.trim()).filter(Boolean) 
+      },
+      documents: items.map((text, i) => ({
+        id: docIds[i] || -1,
+        text,
+        status: itemStatuses[i] || "pending",
+        spans: nextSpans[i] || [],
+        relations: nextRels[i] || []
+      }))
+    }
+    try {
+      const res = await fetch(`http://localhost:8000/api/projects/${pid}/sync`, { 
+        method: 'POST', 
+        body: JSON.stringify(payload), 
+        headers: {'Content-Type': 'application/json'} 
+      })
+      if (!res.ok) throw new Error("Save failed")
+      
+      const data = await res.json()
+      if (data.documents && Array.isArray(data.documents)) {
+          // Update docIds with the returned IDs from backend
+          const newDocIds = [...docIds]
+          data.documents.forEach((d: any, i: number) => {
+              if (i < newDocIds.length) newDocIds[i] = d.id
+          })
+          setDocIds(newDocIds)
+      }
+      
+      alert("Project saved!")
+    } catch (e) {
+      alert("Save failed: " + e)
+    }
+  }
+
   return (
     <div style={{ display: "flex", gap: 24, padding: 16 }}>
       <div style={{ width: 300 }}>
         <div style={{ display: "grid", gap: 8 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+             <span style={{ fontWeight: "bold" }}>Project Config</span>
+             <div style={{ display: "flex", gap: 8 }}>
+               <button onClick={onSave} style={{ padding: "4px 8px", background: "#28a745", color: "white", border: "none", borderRadius: 4, cursor: "pointer" }}>Save</button>
+               <button onClick={onExport} style={{ padding: "4px 8px", background: "#007bff", color: "white", border: "none", borderRadius: 4, cursor: "pointer" }}>Export JSON</button>
+               <button onClick={onClearAll} style={{ padding: "4px 8px", background: "#dc3545", color: "white", border: "none", borderRadius: 4, cursor: "pointer" }}>Clear All</button>
+             </div>
+          </div>
           <input value={projectName} onChange={e => setProjectName(e.target.value)} placeholder="Project name" />
           <input value={labelsInput} onChange={e => setLabelsInput(e.target.value)} placeholder="Labels comma separated" />
           <input value={relationTypesInput} onChange={e => setRelationTypesInput(e.target.value)} placeholder="Relation types comma separated" />
@@ -445,9 +624,15 @@ export default function App() {
           <input placeholder="Search" value={search} onChange={e => setSearch(e.target.value)} />
           <div style={{ maxHeight: 240, overflow: "auto", border: "1px solid #eee", borderRadius: 6 }}>
             {filteredIndices.map(i => (
-              <div key={i} onClick={() => { saveCurrent(); loadIndex(i) }} style={{ padding: 8, cursor: "pointer", background: currentIndex===i?"#f0f0f0":undefined, display: "flex", justifyContent: "space-between" }}>
-                <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 200 }}>{items[i]}</div>
-                <div>{itemStatuses[i]==='completed'?"✅":itemStatuses[i]==='in_progress'?"⏳":"🕒"}</div>
+              <div key={i} onClick={() => { saveCurrent(); loadIndex(i) }} style={{ padding: 8, cursor: "pointer", background: currentIndex===i?"#f0f0f0":undefined, display: "flex", justifyContent: "space-between", alignItems: 'center' }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, overflow: "hidden" }}>
+                    <input type="checkbox" checked={selectedIndices.has(i)} onClick={(e) => onToggleSelect(i, e)} onChange={()=>{}} />
+                    <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 160 }}>{items[i]}</div>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    <div>{itemStatuses[i]==='completed'?"✅":itemStatuses[i]==='in_progress'?"⏳":"🕒"}</div>
+                    <button onClick={(e) => onDeleteDoc(i, e)} style={{ border: "none", background: "transparent", cursor: "pointer", color: "#dc3545" }}>×</button>
+                </div>
               </div>
             ))}
           </div>

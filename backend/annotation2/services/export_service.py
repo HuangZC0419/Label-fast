@@ -1,15 +1,19 @@
 import os
+import json
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 from sqlalchemy import select
 from ..storage.db import get_session, init_db
-from ..storage.schema import Document, Annotation, Relation
+from ..storage.schema import Document, Annotation, Relation, Project
 
-def export_project(project_id: int, fmt: str = "jsonl", output_dir: Optional[str] = None) -> str:
+def export_project(project_id: int, fmt: str = "jsonl", output_dir: Optional[str] = None, doc_ids: Optional[List[int]] = None) -> str:
     init_db()
     s = get_session()
     try:
-        q_docs = select(Document).where(Document.project_id == project_id).order_by(Document.id.asc())
+        q_docs = select(Document).where(Document.project_id == project_id)
+        if doc_ids:
+            q_docs = q_docs.where(Document.id.in_(doc_ids))
+        q_docs = q_docs.order_by(Document.id.asc())
         docs = s.execute(q_docs).scalars().all()
         if output_dir is None:
             base_dir = os.path.join(os.path.dirname(__file__), "..", "exports")
@@ -17,6 +21,78 @@ def export_project(project_id: int, fmt: str = "jsonl", output_dir: Optional[str
             base_dir = output_dir
         os.makedirs(base_dir, exist_ok=True)
         ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+
+        if fmt.lower() == "json_v2":
+            # New Feature: Structured JSON Export
+            path = os.path.join(base_dir, f"project_{project_id}_{ts}.json")
+            
+            # Fetch project info
+            p = s.get(Project, project_id)
+            project_info = {
+                "project_name": p.name if p else "Unknown",
+                "export_time": datetime.utcnow().isoformat(),
+                "version": "1.0"
+            }
+
+            export_docs = []
+            for d in docs:
+                # Fetch Annotations
+                q_anns = select(Annotation).where(Annotation.doc_id == d.id).order_by(Annotation.id.asc())
+                anns = s.execute(q_anns).scalars().all()
+                
+                # Map Ann ID to Export ID
+                ann_id_map = {a.id: f"ent_{i+1}" for i, a in enumerate(anns)}
+                
+                entities = []
+                for a in anns:
+                    entities.append({
+                        "id": ann_id_map[a.id],
+                        "start_offset": a.start,
+                        "end_offset": a.end,
+                        "label": a.label,
+                        "text": d.text[a.start:a.end],
+                        "confidence": 1.0  # Default
+                    })
+
+                # Fetch Relations
+                q_rels = select(Relation).where(Relation.doc_id == d.id).order_by(Relation.id.asc())
+                rels = s.execute(q_rels).scalars().all()
+                
+                relations = []
+                for i, r in enumerate(rels):
+                    if r.from_ann_id in ann_id_map and r.to_ann_id in ann_id_map:
+                        relations.append({
+                            "id": f"rel_{i+1}",
+                            "from_entity_id": ann_id_map[r.from_ann_id],
+                            "to_entity_id": ann_id_map[r.to_ann_id],
+                            "relation_type": r.relation_type,
+                            "confidence": 1.0 # Default
+                        })
+
+                doc_obj = {
+                    "text_id": f"doc_{d.id}_unit_{d.unit_index or 0}",
+                    "original_text": d.text,
+                    "annotations": {
+                        "entities": entities,
+                        "relations": relations
+                    },
+                    "metadata": {
+                        "annotator": "current_user", # Default
+                        "annotation_time": d.created_at.isoformat() if d.created_at else None,
+                        "status": d.status
+                    }
+                }
+                export_docs.append(doc_obj)
+
+            final_obj = {
+                "project_info": project_info,
+                "documents": export_docs
+            }
+            
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(json.dumps(final_obj, indent=2, ensure_ascii=False))
+            return path
+
         if fmt.lower() == "jsonl":
             path = os.path.join(base_dir, f"project_{project_id}_{ts}.jsonl")
             with open(path, "w", encoding="utf-8") as f:
