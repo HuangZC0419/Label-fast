@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minimind Image Labeler</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .image-container {
+            /* max-height removed to let flex handle it */
+            overflow: auto;
+            display: flex;
+            /* margin: auto on img handles centering + scrolling */
+            background-color: #f3f4f6;
+            border-radius: 0.5rem;
+            position: relative;
+        }
+        .image-container img {
+            margin: auto;
+            display: block;
+            transition: width 0.1s ease-out, height 0.1s ease-out;
+            will-change: width, height;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800 h-screen flex flex-col">
+
+<div id="app" class="flex flex-col h-full">
+    <!-- Header -->
+    <header class="bg-white shadow p-4 flex justify-between items-center z-10">
+        <h1 class="text-xl font-bold text-indigo-600">Minimind Image Labeler</h1>
+        <div class="flex items-center gap-4">
+            <div class="text-sm text-gray-500">
+                已标注: <span class="font-bold text-green-600">{{ labeledCount }}</span> / {{ totalImages }}
+            </div>
+            <button @click="showConfig = !showConfig" class="text-gray-500 hover:text-gray-700">
+                ⚙️ 设置
+            </button>
+        </div>
+    </header>
+
+    <!-- Config Modal -->
+    <div v-if="showConfig" class="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
+        <div class="bg-white p-6 rounded shadow-lg w-96">
+            <h2 class="text-lg font-bold mb-4">系统设置</h2>
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700">图片文件夹路径</label>
+                <input v-model="config.image_dir" class="mt-1 block w-full border border-gray-300 rounded px-2 py-1">
+            </div>
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700">输出 JSONL 路径</label>
+                <input v-model="config.jsonl_path" class="mt-1 block w-full border border-gray-300 rounded px-2 py-1">
+            </div>
+            <div class="flex justify-end gap-2">
+                <button @click="saveConfig" class="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700">保存并刷新</button>
+                <button @click="showConfig = false" class="text-gray-500 hover:text-gray-700 px-4 py-2">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="flex-1 flex overflow-hidden">
+        <!-- Sidebar (Image List) -->
+        <div class="w-64 bg-white border-r overflow-y-auto hidden md:block">
+            <div v-for="(img, index) in images" :key="img" 
+                 @click="selectImage(index)"
+                 class="p-2 cursor-pointer hover:bg-gray-100 text-sm truncate flex justify-between items-center"
+                 :class="{'bg-indigo-50 border-l-4 border-indigo-600': currentIndex === index, 'text-green-600': isLabeled(img)}">
+                <span>{{ img }}</span>
+                <span v-if="isLabeled(img)" class="text-xs">✓</span>
+            </div>
+        </div>
+
+        <!-- Workspace -->
+        <div class="flex-1 flex flex-col md:flex-row p-4 gap-4 overflow-hidden">
+            
+            <!-- Image View -->
+            <div class="flex-1 flex flex-col min-w-0">
+                <div class="image-container flex-1 shadow-inner border border-gray-200 relative group">
+                    <img v-if="currentImageName" 
+                         ref="imageRef"
+                         :src="getImageUrl(currentImageName)" 
+                         alt="Current Image"
+                         :style="imageStyle"
+                         @load="onImageLoad"
+                         @wheel.prevent="onWheel"
+                         @dblclick="resetZoom"
+                         title="滚轮缩放，双击重置">
+                    <div v-else class="text-gray-400 m-auto">暂无图片</div>
+                    
+                    <!-- Zoom Controls (Modern Floating Bar) -->
+                    <div class="absolute bottom-6 left-1/2 transform -translate-x-1/2 flex items-center gap-1 bg-white/90 backdrop-blur-sm px-4 py-2 rounded-full shadow-xl border border-gray-200 z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                        <button @click="zoomOut" class="p-1.5 hover:bg-gray-100 rounded-full text-gray-700 transition-colors focus:outline-none" title="缩小">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                        </button>
+                        <span class="text-xs font-mono font-medium text-gray-600 w-12 text-center select-none">{{ Math.round(scale * 100) }}%</span>
+                        <button @click="zoomIn" class="p-1.5 hover:bg-gray-100 rounded-full text-gray-700 transition-colors focus:outline-none" title="放大">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                        </button>
+                        <div class="w-px h-4 bg-gray-300 mx-2"></div>
+                        <button @click="resetZoom" class="p-1.5 hover:bg-gray-100 rounded-full text-gray-700 transition-colors focus:outline-none" title="重置 (Fit)">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="mt-2 flex justify-between items-center">
+                    <button @click="prevImage" :disabled="currentIndex <= 0" class="px-4 py-2 bg-gray-200 rounded disabled:opacity-50">← 上一张</button>
+                    <span class="font-mono">{{ currentImageName }}</span>
+                    <button @click="nextImage" :disabled="currentIndex >= images.length - 1" class="px-4 py-2 bg-gray-200 rounded disabled:opacity-50">下一张 →</button>
+                </div>
+            </div>
+
+            <!-- Input Form -->
+            <div class="w-full md:w-1/3 bg-white p-4 rounded shadow flex flex-col gap-4 overflow-y-auto">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">User Input (用户指令)</label>
+                    <div class="relative">
+                        <textarea v-model="userContent" ref="userContentRef" rows="4" class="w-full border border-gray-300 rounded p-2 focus:ring-indigo-500 focus:border-indigo-500" placeholder="例如: 描述这张图片..."></textarea>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Assistant Output (助手回答)</label>
+                    <textarea v-model="assistantContent" rows="6" class="w-full border border-gray-300 rounded p-2 focus:ring-indigo-500 focus:border-indigo-500" placeholder="模型预期的回答..."></textarea>
+                </div>
+
+                <div class="mt-auto pt-4 border-t flex flex-col gap-2">
+                    <div v-if="saveStatus" :class="{'text-green-600': saveStatus.type === 'success', 'text-red-600': saveStatus.type === 'error'}" class="text-sm text-center mb-2">
+                        {{ saveStatus.msg }}
+                    </div>
+                    <button @click="saveAndNext" class="w-full bg-indigo-600 text-white py-2 rounded font-bold hover:bg-indigo-700 transition flex justify-center items-center gap-2">
+                        <span>保存并下一张</span>
+                        <span class="text-xs font-normal opacity-75">(Ctrl + Enter)</span>
+                    </button>
+                    <button @click="nextImage" class="w-full bg-white border border-gray-300 text-gray-700 py-2 rounded hover:bg-gray-50">
+                        跳过 (不保存)
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const { createApp, ref, computed, onMounted, watch } = Vue;
+
+createApp({
+    setup() {
+        const config = ref({ image_dir: '', jsonl_path: '' });
+        const showConfig = ref(false);
+        const images = ref([]);
+        const labeledSet = ref(new Set());
+        const currentIndex = ref(0);
+        const scale = ref(1);
+        const imageRef = ref(null);
+        const baseSize = ref({ w: 0, h: 0 });
+        
+        const userContent = ref('详细描述这张图片。');
+        const assistantContent = ref('');
+        const saveStatus = ref(null);
+        const userContentRef = ref(null);
+
+        const currentImageName = computed(() => {
+            if (images.value.length > 0 && currentIndex.value >= 0 && currentIndex.value < images.value.length) {
+                return images.value[currentIndex.value];
+            }
+            return null;
+        });
+
+        const labeledCount = computed(() => labeledSet.value.size);
+        const totalImages = computed(() => images.value.length);
+
+        const getImageUrl = (name) => `./api/image_file/${encodeURIComponent(name)}`;
+        const isLabeled = (name) => labeledSet.value.has(name);
+
+        const fetchConfig = async () => {
+            try {
+                const res = await fetch('./api/config');
+                config.value = await res.json();
+                await fetchImages();
+            } catch (e) {
+                console.error(e);
+            }
+        };
+
+        const saveConfig = async () => {
+            try {
+                const res = await fetch('./api/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(config.value)
+                });
+                if (res.ok) {
+                    showConfig.value = false;
+                    await fetchImages();
+                }
+            } catch (e) {
+                alert('保存配置失败');
+            }
+        };
+
+        const fetchImages = async () => {
+            try {
+                const res = await fetch('./api/images');
+                const data = await res.json();
+                images.value = data.images;
+                labeledSet.value = new Set(data.labeled);
+                
+                // Find first unlabeled image
+                const firstUnlabeled = images.value.findIndex(img => !labeledSet.value.has(img));
+                if (firstUnlabeled !== -1) {
+                    currentIndex.value = firstUnlabeled;
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        };
+
+        const selectImage = (index) => {
+            currentIndex.value = index;
+            scale.value = 1;
+            assistantContent.value = '';
+            saveStatus.value = null;
+        };
+
+        const prevImage = () => {
+            if (currentIndex.value > 0) selectImage(currentIndex.value - 1);
+        };
+
+        const nextImage = () => {
+            if (currentIndex.value < images.value.length - 1) selectImage(currentIndex.value + 1);
+        };
+
+        const onImageLoad = () => {
+            scale.value = 1;
+        };
+
+        const updateBaseSize = () => {
+            if (imageRef.value && scale.value === 1) {
+                baseSize.value = {
+                    w: imageRef.value.offsetWidth,
+                    h: imageRef.value.offsetHeight
+                };
+            }
+        };
+
+        const imageStyle = computed(() => {
+            if (scale.value === 1) {
+                return { maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' };
+            } else {
+                return {
+                    width: (baseSize.value.w * scale.value) + 'px',
+                    height: (baseSize.value.h * scale.value) + 'px',
+                    maxWidth: 'none',
+                    maxHeight: 'none',
+                    objectFit: 'fill'
+                };
+            }
+        });
+
+        const zoomIn = () => {
+            updateBaseSize();
+            scale.value = Math.min(scale.value * 1.2, 10);
+        };
+        const zoomOut = () => {
+            if (scale.value <= 1) return;
+            let newScale = scale.value / 1.2;
+            if (newScale < 1.1) newScale = 1;
+            scale.value = newScale;
+        };
+        const resetZoom = () => {
+            scale.value = 1;
+        };
+        const onWheel = (e) => {
+            updateBaseSize();
+            const delta = e.deltaY;
+            if (delta > 0) {
+                zoomOut();
+            } else {
+                zoomIn();
+            }
+        };
+
+        const insertTag = (tag) => {
+            const textarea = userContentRef.value;
+            if (!textarea) return;
+            
+            const start = textarea.selectionStart;
+            const end = textarea.selectionEnd;
+            const text = userContent.value;
+            
+            userContent.value = text.substring(0, start) + tag + text.substring(end);
+            
+            // Restore focus and cursor
+            setTimeout(() => {
+                textarea.focus();
+                textarea.setSelectionRange(start + tag.length, start + tag.length);
+            }, 0);
+        };
+
+        const saveAndNext = async () => {
+            if (!currentImageName.value) return;
+            if (!assistantContent.value.trim()) {
+                saveStatus.value = { type: 'error', msg: '助手回答不能为空' };
+                return;
+            }
+
+            try {
+                const res = await fetch('./api/save', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        image: currentImageName.value,
+                        user_content: userContent.value,
+                        assistant_content: assistantContent.value
+                    })
+                });
+
+                if (res.ok) {
+                    labeledSet.value.add(currentImageName.value);
+                    saveStatus.value = { type: 'success', msg: '保存成功!' };
+                    setTimeout(() => {
+                        saveStatus.value = null;
+                        nextImage();
+                    }, 500);
+                } else {
+                    throw new Error('Save failed');
+                }
+            } catch (e) {
+                saveStatus.value = { type: 'error', msg: '保存失败: ' + e.message };
+            }
+        };
+
+        // Keyboard shortcuts
+        const handleKeydown = (e) => {
+            // Allow Ctrl+Enter from anywhere to save
+            if (e.ctrlKey && e.key === 'Enter') {
+                e.preventDefault(); // Prevent default newline in textarea
+                saveAndNext();
+                return;
+            }
+
+            // For navigation keys, ensure we are not typing in an input/textarea
+            const target = e.target;
+            const isTyping = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
+            
+            if (!isTyping) {
+                switch(e.key.toLowerCase()) {
+                    case 'a':
+                        prevImage();
+                        break;
+                    case 'd':
+                        nextImage();
+                        break;
+                    case 'w': // Optional: Zoom In
+                        zoomIn();
+                        break;
+                    case 's': // Optional: Zoom Out
+                        zoomOut();
+                        break;
+                    case 'r': // Optional: Reset Zoom
+                        resetZoom();
+                        break;
+                }
+            }
+        };
+
+        onMounted(() => {
+            fetchConfig();
+            window.addEventListener('keydown', handleKeydown);
+        });
+
+        return {
+            config, showConfig, images, currentIndex, 
+            userContent, assistantContent, saveStatus, userContentRef,
+            currentImageName, labeledCount, totalImages,
+            getImageUrl, isLabeled, saveConfig, selectImage, 
+            prevImage, nextImage, insertTag, saveAndNext,
+            scale, zoomIn, zoomOut, resetZoom, onWheel,
+            imageRef, onImageLoad, imageStyle
+        };
+    }
+}).mount('#app');
+</script>
+</body>
+</html>

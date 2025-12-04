@@ -1,11 +1,19 @@
 import os
+import sys
+# Ensure the project root is in sys.path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 from fastapi import FastAPI, HTTPException, Body, Response, Query
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from annotation2.services import export_service, sync_service
+from Minimind_trianer.label_system.app import app as minimind_app
 from typing import Dict, Any, List, Optional
 
 app = FastAPI()
+
+# Mount Minimind Image Labeler
+app.mount("/minimind", minimind_app)
 
 # Add CORS to allow frontend access
 app.add_middleware(

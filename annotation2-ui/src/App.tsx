@@ -598,6 +598,7 @@ export default function App() {
              <div style={{ display: "flex", gap: 8 }}>
                <button onClick={onSave} style={{ padding: "4px 8px", background: "#28a745", color: "white", border: "none", borderRadius: 4, cursor: "pointer" }}>Save</button>
                <button onClick={onExport} style={{ padding: "4px 8px", background: "#007bff", color: "white", border: "none", borderRadius: 4, cursor: "pointer" }}>Export JSON</button>
+               <button onClick={() => window.open('http://localhost:8000/minimind/', '_blank')} style={{ padding: "4px 8px", background: "#6f42c1", color: "white", border: "none", borderRadius: 4, cursor: "pointer" }}>Image Labeler</button>
                <button onClick={onClearAll} style={{ padding: "4px 8px", background: "#dc3545", color: "white", border: "none", borderRadius: 4, cursor: "pointer" }}>Clear All</button>
              </div>
           </div>

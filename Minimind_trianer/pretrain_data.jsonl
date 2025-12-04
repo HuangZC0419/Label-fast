@@ -1,0 +1,2 @@
+{"conversations": [{"role": "user", "content": "详细描述这张图片。\n<image>"}, {"role": "assistant", "content": "这是一群户外骑行者"}], "image": "GCC_train_000000019.jpg"}
+{"conversations": [{"role": "user", "content": "详细描述这张图片。\n<image>"}, {"role": "assistant", "content": "这是一个有很多钱的保险箱"}], "image": "GCC_train_000000023.jpg"}
