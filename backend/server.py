@@ -6,7 +6,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from fastapi import FastAPI, HTTPException, Body, Response, Query
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
-from annotation2.services import export_service, sync_service
+from annotation2.services import export_service, sync_service, record_service
 from Minimind_trianer.label_system.app import app as minimind_app
 from typing import Dict, Any, List, Optional
 
@@ -43,6 +43,21 @@ def get_project_id(name: str):
         raise HTTPException(status_code=404, detail="Project not found")
     return {"id": pid}
 
+@app.post("/api/projects")
+def create_project_api(data: Dict[str, Any] = Body(...)):
+    name = data.get("name")
+    if not name:
+        raise HTTPException(status_code=400, detail="Project name required")
+    try:
+        pid = sync_service.create_project(
+            name=name,
+            labels=data.get("labels", []),
+            relation_types=data.get("relation_types", [])
+        )
+        return {"id": pid, "name": name}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/api/projects/{project_id}/sync")
 def load_project_data(project_id: int):
     data = sync_service.load_project_data(project_id)
@@ -54,6 +69,16 @@ def load_project_data(project_id: int):
 def save_project_data(project_id: int, data: Dict[str, Any] = Body(...)):
     try:
         return sync_service.save_project_data(project_id, data)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/projects/{project_id}/record")
+def save_record_api(project_id: int, data: Dict[str, Any] = Body(...)):
+    try:
+        success = record_service.append_jsonl(project_id, data)
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to append record")
+        return {"status": "ok"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -102,3 +127,5 @@ if __name__ == "__main__":
         print("Port 8000 is busy, trying 8001...")
         print("Access the API at: http://localhost:8001")
         uvicorn.run(app, host="0.0.0.0", port=8001)
+
+# Server updated with record endpoint

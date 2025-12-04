@@ -1,0 +1,55 @@
+{
+  "project_info": {
+    "project_name": "Demo",
+    "export_time": "2025-12-04T06:53:50.764560",
+    "version": "1.0"
+  },
+  "documents": [
+    {
+      "text_id": "doc_51_unit_0",
+      "original_text": "1，\n2，\n3，\n4，\n5，\n6，\n7，\n8，\n9，\n10",
+      "annotations": {
+        "entities": [
+          {
+            "id": "ent_1",
+            "start_offset": 0,
+            "end_offset": 2,
+            "label": "人",
+            "text": "1，",
+            "confidence": 1.0
+          },
+          {
+            "id": "ent_2",
+            "start_offset": 3,
+            "end_offset": 5,
+            "label": "物",
+            "text": "2，",
+            "confidence": 1.0
+          },
+          {
+            "id": "ent_3",
+            "start_offset": 6,
+            "end_offset": 7,
+            "label": "事",
+            "text": "3",
+            "confidence": 1.0
+          }
+        ],
+        "relations": [
+          {
+            "id": "rel_1",
+            "from_entity_id": "ent_1",
+            "to_entity_id": "ent_2",
+            "relation_type": "从属",
+            "confidence": 1.0
+          }
+        ]
+      },
+      "metadata": {
+        "annotator": "current_user",
+        "annotation_time": "2025-12-04T06:49:32.829781",
+        "status": "in_progress"
+      }
+    }
+  ]
+}

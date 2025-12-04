@@ -288,6 +288,59 @@ export default function App() {
     setItemStatuses({ ...itemStatuses, [currentIndex]: "completed" })
   }
 
+  const handleSaveAndNext = async () => {
+    if (currentIndex < 0) return
+    
+    // Save to local state first
+    saveCurrent()
+
+    const record = {
+      id: docIds[currentIndex] || -1,
+      text: text,
+      spans: spans,
+      relations: relations,
+      meta: {
+        timestamp: new Date().toISOString(),
+        project_name: projectName,
+        project_id: pid
+      }
+    }
+
+    try {
+      const res = await fetch(`http://localhost:8000/api/projects/${pid}/record`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(record)
+      })
+
+      if (!res.ok) {
+          const errText = await res.text()
+          throw new Error(`Failed to save record (${res.status}): ${errText}`)
+      }
+
+      // Mark as completed
+      setItemStatuses(prev => ({ ...prev, [currentIndex]: "completed" }))
+      
+      // Move next
+      if (currentIndex < items.length - 1) {
+        loadIndex(currentIndex + 1)
+      } else {
+        alert("Finished all items!")
+      }
+    } catch (e) {
+      alert("Error saving record: " + e)
+    }
+  }
+
+  const handleSkip = () => {
+      if (currentIndex < items.length - 1) {
+          saveCurrent() 
+          loadIndex(currentIndex + 1)
+      } else {
+          alert("End of list")
+      }
+  }
+
   const readFileBuffer = (file: File): Promise<ArrayBuffer> => {
     return new Promise((resolve, reject) => {
       const fr = new FileReader()
@@ -602,7 +655,76 @@ export default function App() {
                <button onClick={onClearAll} style={{ padding: "4px 8px", background: "#dc3545", color: "white", border: "none", borderRadius: 4, cursor: "pointer" }}>Clear All</button>
              </div>
           </div>
-          <input value={projectName} onChange={e => setProjectName(e.target.value)} placeholder="Project name" />
+          <div style={{ display: "flex", gap: 8 }}>
+            <input value={projectName} onChange={e => setProjectName(e.target.value)} placeholder="Project name" style={{ flex: 1 }} />
+            <button onClick={async () => {
+                if(!projectName) return
+                try {
+                    const res = await fetch('http://localhost:8000/api/projects', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            name: projectName,
+                            labels: labels,
+                            relation_types: relationTypes
+                        })
+                    })
+                    if(!res.ok) throw new Error(await res.text())
+                    const d = await res.json()
+                    setPid(d.id)
+                    alert(`Switched to Project: ${d.name} (ID: ${d.id})`)
+                    // Reload data for this new project
+                    const syncRes = await fetch(`http://localhost:8000/api/projects/${d.id}/sync`)
+                    if(syncRes.ok) {
+                        const syncData = await syncRes.json()
+                        // Update state manually instead of reloading
+                        if (syncData.project) {
+                          setProjectName(syncData.project.name)
+                          const l = syncData.project.labels
+                          setLabelsInput(Array.isArray(l) ? l.join(",") : (l || "PER,LOC,ORG"))
+                          const r = syncData.project.relation_types
+                          setRelationTypesInput(Array.isArray(r) ? r.join(",") : (r || "LOCATED_IN,WORKS_AT,FOUNDED_IN"))
+                        }
+
+                        const newItems: string[] = []
+                        const newDocIds: number[] = []
+                        const newStatuses: any = {}
+                        const newSpans: any = {}
+                        const newRels: any = {}
+
+                        if (syncData.documents && Array.isArray(syncData.documents)) {
+                           syncData.documents.forEach((doc: any, i: number) => {
+                             newItems.push(doc.text)
+                             newDocIds.push(doc.id)
+                             newStatuses[i] = doc.status
+                             newSpans[i] = doc.spans || []
+                             newRels[i] = doc.relations || []
+                           })
+                        }
+                        
+                        setItems(newItems)
+                        setDocIds(newDocIds)
+                        setItemStatuses(newStatuses)
+                        setSpansByIndex(newSpans)
+                        setRelationsByIndex(newRels)
+                        
+                        if (newItems.length > 0) {
+                          setCurrentIndex(0)
+                          setText(newItems[0])
+                          setSpans(newSpans[0] || [])
+                          setRelations(newRels[0] || [])
+                        } else {
+                          setCurrentIndex(-1)
+                          setText("")
+                          setSpans([])
+                          setRelations([])
+                        }
+                    }
+                } catch(e) {
+                    alert("Failed to create/switch project: " + e)
+                }
+            }} style={{ padding: "4px 8px", cursor: "pointer" }}>Switch/Create</button>
+          </div>
           <input value={labelsInput} onChange={e => setLabelsInput(e.target.value)} placeholder="Labels comma separated" />
           <input value={relationTypesInput} onChange={e => setRelationTypesInput(e.target.value)} placeholder="Relation types comma separated" />
           <textarea value={text} onChange={e => setText(e.target.value)} rows={6} />
@@ -671,6 +793,10 @@ export default function App() {
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
           <button onClick={prevItem}>Prev</button>
           <button onClick={nextItem}>Next</button>
+          <div style={{ width: 16 }}></div>
+          <button onClick={handleSaveAndNext} style={{ background: "#28a745", color: "white", border: "none", borderRadius: 4, padding: "4px 8px", cursor: "pointer" }}>Save & Next</button>
+          <button onClick={handleSkip} style={{ background: "#6c757d", color: "white", border: "none", borderRadius: 4, padding: "4px 8px", cursor: "pointer" }}>Skip</button>
+          <div style={{ width: 16 }}></div>
           <div>{currentIndex>=0?`第${currentIndex+1}/共${items.length}`:"未导入"}</div>
           <button onClick={markCompleted}>Mark completed</button>
           <div>{currentIndex>=0 && itemStatuses[currentIndex]==='completed'?"✅":null}</div>

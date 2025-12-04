@@ -13,6 +13,31 @@ def get_project_id_by_name(name: str) -> Optional[int]:
     finally:
         s.close()
 
+def create_project(name: str, labels: List[str] = None, relation_types: List[str] = None) -> int:
+    init_db()
+    s = get_session()
+    try:
+        # Check if exists
+        q = select(Project).where(Project.name == name)
+        p = s.execute(q).scalars().first()
+        if p:
+            return p.id
+        
+        # Create new
+        new_p = Project(
+            name=name,
+            labels=labels or [],
+            relation_types=relation_types or []
+        )
+        s.add(new_p)
+        s.commit()
+        return new_p.id
+    except Exception as e:
+        s.rollback()
+        raise e
+    finally:
+        s.close()
+
 def load_project_data(project_id: int) -> Dict[str, Any]:
     init_db()
     s = get_session()
