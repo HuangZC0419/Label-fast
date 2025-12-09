@@ -643,15 +643,21 @@ export default function App() {
   }
 
   return (
-    <div style={{ display: "flex", gap: 24, padding: 16 }}>
-      <div style={{ width: 300 }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "100vh" }}>
+      <div style={{ padding: "12px 24px", background: "#f8f9fa", borderBottom: "1px solid #e9ecef", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <h2 style={{ margin: 0, fontSize: "1.25rem", color: "#333" }}>Annotation2 Platform</h2>
+          <button onClick={() => window.open('http://localhost:8000/minimind/', '_blank')} style={{ padding: "8px 16px", background: "#6f42c1", color: "white", border: "none", borderRadius: 4, cursor: "pointer", fontWeight: 500 }}>
+            Switch to Image Labeler
+          </button>
+      </div>
+      <div style={{ display: "flex", gap: 80, padding: 24, flex: 1, overflow: "hidden" }}>
+      <div style={{ width: 380, overflowY: "auto", paddingRight: 8, flexShrink: 0 }}>
         <div style={{ display: "grid", gap: 8 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
              <span style={{ fontWeight: "bold" }}>Project Config</span>
              <div style={{ display: "flex", gap: 8 }}>
                <button onClick={onSave} style={{ padding: "4px 8px", background: "#28a745", color: "white", border: "none", borderRadius: 4, cursor: "pointer" }}>Save</button>
                <button onClick={onExport} style={{ padding: "4px 8px", background: "#007bff", color: "white", border: "none", borderRadius: 4, cursor: "pointer" }}>Export JSON</button>
-               <button onClick={() => window.open('http://localhost:8000/minimind/', '_blank')} style={{ padding: "4px 8px", background: "#6f42c1", color: "white", border: "none", borderRadius: 4, cursor: "pointer" }}>Image Labeler</button>
                <button onClick={onClearAll} style={{ padding: "4px 8px", background: "#dc3545", color: "white", border: "none", borderRadius: 4, cursor: "pointer" }}>Clear All</button>
              </div>
           </div>
@@ -735,7 +741,7 @@ export default function App() {
           <div onDragOver={e => e.preventDefault()} onDrop={onDrop} style={{ border: "2px dashed #bbb", borderRadius: 8, padding: 12 }}>
             <div>Drop .txt files here or select</div>
             <input type="file" multiple accept=".txt" onChange={onSelectFiles} />
-            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+            <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
               <label><input type="radio" checked={splitMode==='as_is'} onChange={() => setSplitMode('as_is')} /> as_is</label>
               <label><input type="radio" checked={splitMode==='paragraph'} onChange={() => setSplitMode('paragraph')} /> paragraph</label>
               <label><input type="radio" checked={splitMode==='sentence'} onChange={() => setSplitMode('sentence')} /> sentence</label>
@@ -789,7 +795,7 @@ export default function App() {
           </div>
         </div>
       </div>
-      <div style={{ flex: 1, position: "relative", marginLeft: 12, maxWidth: 980 }}>
+      <div style={{ flex: 1, position: "relative", maxWidth: "none", overflowY: "auto", paddingRight: 16 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
           <button onClick={prevItem}>Prev</button>
           <button onClick={nextItem}>Next</button>
@@ -801,7 +807,7 @@ export default function App() {
           <button onClick={markCompleted}>Mark completed</button>
           <div>{currentIndex>=0 && itemStatuses[currentIndex]==='completed'?"✅":null}</div>
         </div>
-        <div ref={containerRef} tabIndex={0} onMouseUp={onMouseUp} onContextMenu={onContainerContextMenu} style={{ fontSize: fontSize, lineHeight: lineH, userSelect: "text", cursor: "text", border: "1px solid #ddd", borderRadius: 6, padding: 12, minHeight: 160, position: "relative", whiteSpace: "pre-wrap", overflow: "hidden", background: "#fff", maxWidth: "100%" }}>
+        <div ref={containerRef} tabIndex={0} onMouseUp={onMouseUp} onContextMenu={onContainerContextMenu} style={{ fontSize: fontSize, lineHeight: lineH, userSelect: "text", cursor: "text", border: "1px solid #ddd", borderRadius: 6, padding: "50px 24px 24px 24px", minHeight: 160, position: "relative", whiteSpace: "pre-wrap", overflow: "hidden", background: "#fff", maxWidth: "80%" }}>
           {chars.map((ch, i) => (
             <span key={i} ref={el => { charRefs.current[i] = el }}>
               {ch}
@@ -881,5 +887,6 @@ export default function App() {
         </div>
       </div>
     </div>
+  </div>
   )
 }

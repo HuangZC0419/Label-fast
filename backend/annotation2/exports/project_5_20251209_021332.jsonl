@@ -1,0 +1,3 @@
+{"text": "Mike lives in America.", "entities": [{"start": 0, "end": 4, "label": "PER"}, {"start": 15, "end": 22, "label": "LOC"}], "relations": [{"from_entity": 0, "to_entity": 1, "relation": "LOCATED_IN"}]}
+{"text": "Apple is a company.", "entities": [], "relations": []}
+{"text": "Beijing is in China.", "entities": [], "relations": []}
