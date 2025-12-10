@@ -31,11 +31,12 @@ def add_span(doc_id: int, start: int, end: int, label: str) -> AnnotationModel:
             raise ValueError("label not in project")
         if start < 0 or end < 0 or start >= end or end > len(d.text):
             raise ValueError("invalid span")
-        q = select(Annotation).where(Annotation.doc_id == doc_id)
-        rows = s.execute(q).scalars().all()
-        for r in rows:
-            if not (end <= r.start or start >= r.end):
-                raise ValueError("span overlap")
+        if not bool(p.allow_overlap):
+            q = select(Annotation).where(Annotation.doc_id == doc_id)
+            rows = s.execute(q).scalars().all()
+            for r in rows:
+                if not (end <= r.start or start >= r.end):
+                    raise ValueError("span overlap")
         a = Annotation(doc_id=doc_id, start=start, end=end, label=label)
         s.add(a)
         s.commit()
@@ -61,11 +62,12 @@ def update_span(ann_id: int, start: int, end: int, label: str) -> AnnotationMode
             raise ValueError("label not in project")
         if start < 0 or end < 0 or start >= end or end > len(d.text):
             raise ValueError("invalid span")
-        q = select(Annotation).where(Annotation.doc_id == d.id, Annotation.id != ann_id)
-        rows = s.execute(q).scalars().all()
-        for r in rows:
-            if not (end <= r.start or start >= r.end):
-                raise ValueError("span overlap")
+        if not bool(p.allow_overlap):
+            q = select(Annotation).where(Annotation.doc_id == d.id, Annotation.id != ann_id)
+            rows = s.execute(q).scalars().all()
+            for r in rows:
+                if not (end <= r.start or start >= r.end):
+                    raise ValueError("span overlap")
         s.execute(update(Annotation).where(Annotation.id == ann_id).values(start=start, end=end, label=label).execution_options(synchronize_session="fetch"))
         s.commit()
         a = s.get(Annotation, ann_id)

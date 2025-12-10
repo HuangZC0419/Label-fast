@@ -22,7 +22,7 @@ def import_texts(project_id: int, texts: List[str]) -> List[DocumentModel]:
         s.commit()
         for d in docs:
             s.refresh(d)
-        return [DocumentModel(id=d.id, project_id=d.project_id, text=d.text, created_at=d.created_at) for d in docs]
+        return [DocumentModel(id=d.id, project_id=d.project_id, text=d.text, status=d.status, source_file=d.source_file, unit_index=d.unit_index, created_at=d.created_at) for d in docs]
     finally:
         s.close()
 
@@ -32,7 +32,7 @@ def list_documents(project_id: int, limit: int = 50, offset: int = 0) -> List[Do
     try:
         q = select(Document).where(Document.project_id == project_id).order_by(Document.id.asc()).limit(limit).offset(offset)
         rows = s.execute(q).scalars().all()
-        return [DocumentModel(id=r.id, project_id=r.project_id, text=r.text, created_at=r.created_at) for r in rows]
+        return [DocumentModel(id=r.id, project_id=r.project_id, text=r.text, status=r.status, source_file=r.source_file, unit_index=r.unit_index, created_at=r.created_at) for r in rows]
     finally:
         s.close()
 
@@ -43,6 +43,6 @@ def get_document(doc_id: int) -> DocumentModel:
         d = s.get(Document, doc_id)
         if not d:
             raise ValueError("document not found")
-        return DocumentModel(id=d.id, project_id=d.project_id, text=d.text, created_at=d.created_at)
+        return DocumentModel(id=d.id, project_id=d.project_id, text=d.text, status=d.status, source_file=d.source_file, unit_index=d.unit_index, created_at=d.created_at)
     finally:
         s.close()

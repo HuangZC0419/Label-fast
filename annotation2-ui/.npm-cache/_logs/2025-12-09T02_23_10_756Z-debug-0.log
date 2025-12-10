@@ -3,7 +3,7 @@
 2 info using node@v18.19.0
 3 timing npm:load:whichnode Completed in 2ms
 4 timing config:load:defaults Completed in 3ms
-5 timing config:load:file:D:\nodejs\node_modules\npm\npmrc Completed in 2ms
+5 timing config:load:file:D:\nodejs\node_modules\npm\npmrc Completed in 1ms
 6 timing config:load:builtin Completed in 2ms
 7 timing config:load:cli Completed in 1ms
 8 timing config:load:env Completed in 1ms
@@ -11,26 +11,23 @@
 10 timing config:load:project Completed in 1ms
 11 timing config:load:file:C:\Users\30894\.npmrc Completed in 0ms
 12 timing config:load:user Completed in 0ms
-13 timing config:load:file:D:\nodejs\node_global\etc\npmrc Completed in 1ms
-14 timing config:load:global Completed in 1ms
+13 timing config:load:file:D:\nodejs\node_global\etc\npmrc Completed in 0ms
+14 timing config:load:global Completed in 0ms
 15 timing config:load:setEnvs Completed in 0ms
 16 timing config:load Completed in 9ms
-17 timing npm:load:configload Completed in 9ms
+17 timing npm:load:configload Completed in 10ms
 18 timing config:load:flatten Completed in 2ms
 19 timing npm:load:mkdirpcache Completed in 0ms
-20 timing npm:load:mkdirplogs Completed in 0ms
-21 verbose title npm run build
-22 verbose argv "run" "build"
+20 timing npm:load:mkdirplogs Completed in 1ms
+21 verbose title npm run dev
+22 verbose argv "run" "dev"
 23 timing npm:load:setTitle Completed in 1ms
-24 timing npm:load:display Completed in 1ms
-25 verbose logfile logs-max:10 dir:e:\Annotation2\annotation2-ui\.npm-cache\_logs\2025-11-28T08_07_13_149Z-
-26 verbose logfile e:\Annotation2\annotation2-ui\.npm-cache\_logs\2025-11-28T08_07_13_149Z-debug-0.log
-27 timing npm:load:logFile Completed in 7ms
+24 timing npm:load:display Completed in 0ms
+25 verbose logfile logs-max:10 dir:E:\Annotation2\annotation2-ui\.npm-cache\_logs\2025-12-09T02_23_10_756Z-
+26 verbose logfile E:\Annotation2\annotation2-ui\.npm-cache\_logs\2025-12-09T02_23_10_756Z-debug-0.log
+27 timing npm:load:logFile Completed in 9ms
 28 timing npm:load:timers Completed in 0ms
 29 timing npm:load:configScope Completed in 0ms
-30 timing npm:load Completed in 44ms
-31 silly logfile done cleaning log files
-32 timing command:run Completed in 1447ms
-33 verbose exit 1
-34 timing npm Completed in 1577ms
-35 verbose code 1
+30 timing npm:load Completed in 47ms
+31 silly logfile start cleaning logs, removing 2 files
+32 silly logfile done cleaning log files
