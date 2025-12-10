@@ -645,7 +645,7 @@ export default function App() {
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100vh" }}>
       <div style={{ padding: "12px 24px", background: "#f8f9fa", borderBottom: "1px solid #e9ecef", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <h2 style={{ margin: 0, fontSize: "1.25rem", color: "#333" }}>Annotation2 Platform</h2>
+          <h2 style={{ margin: 0, fontSize: "1.25rem", color: "#333" }}>Annotation Platform</h2>
           <button onClick={() => window.open('http://localhost:8000/minimind/', '_blank')} style={{ padding: "8px 16px", background: "#6f42c1", color: "white", border: "none", borderRadius: 4, cursor: "pointer", fontWeight: 500 }}>
             Switch to Image Labeler
           </button>
@@ -730,6 +730,44 @@ export default function App() {
                     alert("Failed to create/switch project: " + e)
                 }
             }} style={{ padding: "4px 8px", cursor: "pointer" }}>Switch/Create</button>
+          </div>
+          <div style={{ marginTop: 8 }}>
+            <div style={{ marginBottom: 4, fontSize: '0.9em', color: '#666' }}>Upload Config (TXT):</div>
+            <input type="file" accept=".txt" onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              const reader = new FileReader();
+              reader.onload = (event) => {
+                const content = event.target?.result as string;
+                if (!content) return;
+                
+                // Parse the config file
+                // Expected format:
+                // LABELS: PER, LOC, ORG
+                // RELATIONS: WORKS_AT, LOCATED_IN
+                
+                const lines = content.split('\n');
+                let newLabels = "";
+                let newRelations = "";
+                
+                lines.forEach(line => {
+                  const trimLine = line.trim();
+                  if (trimLine.startsWith("LABELS:")) {
+                    newLabels = trimLine.substring(7).trim();
+                  } else if (trimLine.startsWith("RELATIONS:")) {
+                    newRelations = trimLine.substring(10).trim();
+                  }
+                });
+                
+                if (newLabels) setLabelsInput(newLabels);
+                if (newRelations) setRelationTypesInput(newRelations);
+                
+                alert("Config loaded from file!");
+              };
+              reader.readAsText(file);
+              // Reset input
+              e.target.value = '';
+            }} />
           </div>
           <input value={labelsInput} onChange={e => setLabelsInput(e.target.value)} placeholder="Labels comma separated" />
           <input value={relationTypesInput} onChange={e => setRelationTypesInput(e.target.value)} placeholder="Relation types comma separated" />

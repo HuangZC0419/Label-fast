@@ -116,4 +116,4 @@ async def save_label(data: LabelData):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="localhost", port=8081)
+    uvicorn.run(app, host="localhost", port=8080)
