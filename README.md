@@ -10,12 +10,11 @@ pip install -r requirements.txt
 # 3. 启动服务
 python server.py
 
-
-# 1. 进入 annotation2-ui 目录
+# 4. 进入 annotation2-ui 目录
 cd h:\Git\Annotation2\annotation2-ui
 
-# 2. 安装依赖 (如果第一次运行)
+# 5. 安装依赖 (如果第一次运行)
 npm install
 
-# 3. 启动开发服务器
+# 6. 启动开发服务器
 npm run dev
