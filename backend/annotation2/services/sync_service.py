@@ -1,7 +1,9 @@
 from typing import List, Dict, Any, Optional
+import os
 from sqlalchemy import select, delete
 from ..storage.db import get_session, init_db
 from ..storage.schema import Project, Document, Annotation, Relation
+from .record_service import BASE_DATA_DIR
 
 def get_project_id_by_name(name: str) -> Optional[int]:
     init_db()
@@ -31,6 +33,13 @@ def create_project(name: str, labels: List[str] = None, relation_types: List[str
         )
         s.add(new_p)
         s.commit()
+
+        # Create project directory
+        safe_name = "".join([c for c in name if c.isalnum() or c in (' ', '-', '_')]).strip()
+        project_dir = os.path.join(BASE_DATA_DIR, safe_name)
+        if not os.path.exists(project_dir):
+            os.makedirs(project_dir)
+
         return new_p.id
     except Exception as e:
         s.rollback()
@@ -171,6 +180,10 @@ def clear_project(project_id: int) -> bool:
     init_db()
     s = get_session()
     try:
+        p = s.get(Project, project_id)
+        if not p:
+            return False
+
         # Delete all documents in project (cascades to annotations/relations usually, but let's be safe)
         # SQLAlchemy cascade might not be set up in schema, so manual delete is safer
         
@@ -185,7 +198,11 @@ def clear_project(project_id: int) -> bool:
             s.execute(delete(Annotation).where(Annotation.doc_id.in_(doc_ids)))
             # Delete documents
             s.execute(delete(Document).where(Document.id.in_(doc_ids)))
-            
+
+        p.labels = []
+        p.relation_types = []
+        s.add(p)
+
         s.commit()
         return True
     finally:

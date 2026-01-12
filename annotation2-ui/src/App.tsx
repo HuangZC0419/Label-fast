@@ -1,4 +1,6 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
+import "./App.css"
+import HelpModal from './HelpModal'
 
 type Span = { id: number; start: number; end: number; label: string }
 type Relation = { fromId: number; toId: number; type: string }
@@ -23,12 +25,11 @@ function useSelectionOffsets(container: React.RefObject<HTMLDivElement>, text: s
 }
 
 export default function App() {
-  const [projectName, setProjectName] = useState("Demo")
-  const [labelsInput, setLabelsInput] = useState("PER,LOC,ORG")
-  const [relationTypesInput, setRelationTypesInput] = useState("LOCATED_IN,WORKS_AT,FOUNDED_IN")
+  const [projectName, setProjectName] = useState("")
+  const [labelsInput, setLabelsInput] = useState("")
+  const [relationTypesInput, setRelationTypesInput] = useState("")
   const labels = useMemo(() => (labelsInput || "").split(/[，,;；]/).map(s => s.trim()).filter(Boolean), [labelsInput])
   const relationTypes = useMemo(() => (relationTypesInput || "").split(/[，,;；]/).map(s => s.trim()).filter(Boolean), [relationTypesInput])
-  const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set())
   const palette = useMemo(() => {
     const base = ["#ffb3ba", "#baffc9", "#bae1ff", "#ffffba", "#ffc9de", "#c9fff2"]
     const m: Record<string, string> = {}
@@ -73,7 +74,7 @@ export default function App() {
     }
     return out
   }
-  const [text, setText] = useState("Mike lives in America.")
+  const [text, setText] = useState("")
   const [spans, setSpans] = useState<Span[]>([])
   const [spansByIndex, setSpansByIndex] = useState<{[key:number]: Span[]}>({})
   const [nextId, setNextId] = useState(1)
@@ -81,65 +82,29 @@ export default function App() {
   const [relationsByIndex, setRelationsByIndex] = useState<{[key:number]: Relation[]}>({})
   const [items, setItems] = useState<string[]>([])
   const [docIds, setDocIds] = useState<number[]>([])
-  const [pid, setPid] = useState<number>(2)
+  const [pid, setPid] = useState<number>(0)
   const [itemStatuses, setItemStatuses] = useState<{[key:number]: "pending"|"in_progress"|"completed"}>({})
+  const [projectList, setProjectList] = useState<{id: number, name: string}[]>([])
+
+  const fetchProjects = async () => {
+      try {
+          const res = await fetch('http://localhost:8000/api/projects')
+          if(res.ok) {
+              const data = await res.json()
+              setProjectList(data)
+          }
+      } catch(e) {
+          console.error("Failed to fetch projects", e)
+      }
+  }
 
   useEffect(() => {
-    fetch('http://localhost:8000/api/projects/id-by-name/Demo')
-      .then(r => r.ok ? r.json() : {id: 2})
-      .then(d => {
-        const id = d.id
-        setPid(id)
-        return fetch(`http://localhost:8000/api/projects/${id}/sync`)
-      })
-      .then(r => {
-        if (!r.ok) throw new Error("Failed to load")
-        return r.json()
-      })
-      .then(data => {
-        if (data.project) {
-          setProjectName(data.project.name)
-          const l = data.project.labels
-          setLabelsInput(Array.isArray(l) ? l.join(",") : (l || "PER,LOC,ORG"))
-          const r = data.project.relation_types
-          setRelationTypesInput(Array.isArray(r) ? r.join(",") : (r || "LOCATED_IN,WORKS_AT,FOUNDED_IN"))
-        }
-        if (data.documents && Array.isArray(data.documents)) {
-           const newItems: string[] = []
-           const newDocIds: number[] = []
-           const newStatuses: any = {}
-           const newSpans: any = {}
-           const newRels: any = {}
-           
-           data.documents.forEach((d: any, i: number) => {
-             newItems.push(d.text)
-             newDocIds.push(d.id)
-             newStatuses[i] = d.status
-             newSpans[i] = d.spans || []
-             newRels[i] = d.relations || []
-           })
-           
-           setItems(newItems)
-           setDocIds(newDocIds)
-           setItemStatuses(newStatuses)
-           setSpansByIndex(newSpans)
-           setRelationsByIndex(newRels)
-           
-           if (newItems.length > 0) {
-             setCurrentIndex(0)
-             setText(newItems[0])
-             setSpans(newSpans[0] || [])
-             setRelations(newRels[0] || [])
-           }
-        }
-      })
-      .catch(e => console.error("Sync load error:", e))
+    fetchProjects()
+
   }, [])
   const [currentIndex, setCurrentIndex] = useState<number>(-1)
-  const [splitMode, setSplitMode] = useState<"as_is"|"paragraph"|"sentence"|"length">("sentence")
-  const [fixedLength, setFixedLength] = useState<number>(500)
+  const [splitMode, setSplitMode] = useState<"as_is"|"paragraph"|"sentence">("sentence")
   const [uploadInfo, setUploadInfo] = useState<string>("")
-  const [search, setSearch] = useState<string>("")
   const containerRef = useRef<HTMLDivElement>(null)
   const getOffsets = useSelectionOffsets(containerRef, text)
   const [pending, setPending] = useState<{ start: number; end: number } | null>(null)
@@ -149,6 +114,7 @@ export default function App() {
   const [relPickerOpen, setRelPickerOpen] = useState(false)
   const [hoverRelIdx, setHoverRelIdx] = useState<number | null>(null)
   const [boxes, setBoxes] = useState<Record<number, { x: number; y: number; w: number; h: number }>>({})
+  const [overlayHeight, setOverlayHeight] = useState<number>(0)
   const [selectedSpanId, setSelectedSpanId] = useState<number | null>(null)
   const [relFromId, setRelFromId] = useState<number | null>(null)
   const charRefs = useRef<{[key:number]: HTMLSpanElement|null}>({})
@@ -157,7 +123,47 @@ export default function App() {
   const [lineH, setLineH] = useState<number>(1.8)
   const [relStrokeWidth, setRelStrokeWidth] = useState<number>(2)
   const [relDashed, setRelDashed] = useState<boolean>(false)
-  
+  const [showSettings, setShowSettings] = useState(false)
+  const [splitHelpOpen, setSplitHelpOpen] = useState(false)
+  const splitHelpRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!splitHelpOpen) return
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node | null
+      if (!t) return
+      if (splitHelpRef.current && !splitHelpRef.current.contains(t)) setSplitHelpOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [splitHelpOpen])
+
+  const IconOriginal = ({ active }: { active: boolean }) => (
+    <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true" className="icon">
+      <path d="M6.5 2.5h6l3 3v12a1 1 0 0 1-1 1h-8a1 1 0 0 1-1-1v-14a1 1 0 0 1 1-1Z" stroke={active ? "currentColor" : "currentColor"} strokeWidth="1.5" opacity={active ? 1 : 0.8}/>
+      <path d="M12.5 2.5v3a1 1 0 0 0 1 1h3" stroke="currentColor" strokeWidth="1.5" opacity={active ? 1 : 0.8}/>
+      <path d="M7.5 9h6.5M7.5 12h5.2M7.5 15h6.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" opacity={active ? 1 : 0.65}/>
+    </svg>
+  )
+
+  const IconParagraph = ({ active }: { active: boolean }) => (
+    <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true" className="icon">
+      <path d="M4 5.5h12M4 8.8h8.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" opacity={active ? 1 : 0.75}/>
+      <path d="M4 12.7h12M4 16h8.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" opacity={active ? 1 : 0.75}/>
+      <path d="M14.6 8.8h1.4M14.6 16h1.4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" opacity={active ? 1 : 0.55}/>
+    </svg>
+  )
+
+  const IconSentence = ({ active }: { active: boolean }) => (
+    <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true" className="icon">
+      <path d="M4 6h9.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" opacity={active ? 1 : 0.8}/>
+      <path d="M4 10h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" opacity={active ? 1 : 0.8}/>
+      <path d="M4 14h8.2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" opacity={active ? 1 : 0.8}/>
+      <path d="M14.8 6.1a1.2 1.2 0 1 1-2.4 0 1.2 1.2 0 0 1 2.4 0Z" fill="currentColor" opacity={active ? 1 : 0.6}/>
+      <path d="M17 10.1a1.2 1.2 0 1 1-2.4 0 1.2 1.2 0 0 1 2.4 0Z" fill="currentColor" opacity={active ? 1 : 0.6}/>
+      <path d="M14.2 14.1a1.2 1.2 0 1 1-2.4 0 1.2 1.2 0 0 1 2.4 0Z" fill="currentColor" opacity={active ? 1 : 0.6}/>
+    </svg>
+  )
 
   const onMouseUp = (e: React.MouseEvent<HTMLDivElement>) => {
     if (relPickerOpen || dragFromId !== null) return
@@ -238,6 +244,9 @@ export default function App() {
       rects.push({ x: r.left - cb.left, y: r.top - cb.top, w: r.width, h: r.height })
     }
     setCharRects(rects)
+    let maxY = 0
+    for (const r of rects) maxY = Math.max(maxY, r.y + r.h)
+    setOverlayHeight(Math.max(maxY, cb.height))
     const m: Record<number, { x: number; y: number; w: number; h: number }> = {}
     for (const s of spans) {
       const segs = spanSegments(s.start, s.end, rects)
@@ -283,10 +292,6 @@ export default function App() {
     saveCurrent()
     loadIndex(currentIndex + 1)
   }
-  const markCompleted = () => {
-    if (currentIndex < 0) return
-    setItemStatuses({ ...itemStatuses, [currentIndex]: "completed" })
-  }
 
   const handleSaveAndNext = async () => {
     if (currentIndex < 0) return
@@ -325,10 +330,50 @@ export default function App() {
       if (currentIndex < items.length - 1) {
         loadIndex(currentIndex + 1)
       } else {
-        alert("Finished all items!")
+        alert("已完成所有文档！")
       }
     } catch (e) {
-      alert("Error saving record: " + e)
+      alert("保存记录失败: " + e)
+    }
+  }
+
+  const handleSaveOnly = async () => {
+    if (currentIndex < 0) return
+    
+    // Save to local state first
+    saveCurrent()
+
+    const record = {
+      id: docIds[currentIndex] || -1,
+      text: text,
+      spans: spans,
+      relations: relations,
+      meta: {
+        timestamp: new Date().toISOString(),
+        project_name: projectName,
+        project_id: pid
+      }
+    }
+
+    try {
+      const res = await fetch(`http://localhost:8000/api/projects/${pid}/record`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(record)
+      })
+
+      if (!res.ok) {
+          const errText = await res.text()
+          throw new Error(`Failed to save record (${res.status}): ${errText}`)
+      }
+
+      // Mark as completed
+      setItemStatuses(prev => ({ ...prev, [currentIndex]: "completed" }))
+      
+      // Just alert, don't move
+      // alert("已保存")
+    } catch (e) {
+      alert("保存记录失败: " + e)
     }
   }
 
@@ -337,7 +382,7 @@ export default function App() {
           saveCurrent() 
           loadIndex(currentIndex + 1)
       } else {
-          alert("End of list")
+          alert("已到列表末尾")
       }
   }
 
@@ -363,27 +408,25 @@ export default function App() {
   const splitTextUI = (t: string): string[] => {
     const s = t.replace(/\r\n/g, "\n")
     if (splitMode === "as_is") return [s]
-    if (splitMode === "paragraph") return s.split(/\n\n+/).map(x => x.trim()).filter(Boolean)
+    if (splitMode === "paragraph") return s.split(/\n+/).map(x => x.trim()).filter(Boolean)
     if (splitMode === "sentence") {
       const out: string[] = []
+      const regex = /([。；！？!?;]|\.{3}|…{1,2})/
+      const parts = s.split(regex)
+      
       let cur = ""
-      for (const ch of s) {
-        cur += ch
-        if (/[。．\.!？!?]/.test(ch)) {
-          const k = cur.trim()
-          if (k) out.push(k)
+      for (const part of parts) {
+        if (regex.test(part)) {
+          cur += part
+          if (cur.trim()) out.push(cur.trim())
           cur = ""
+        } else {
+          cur += part
         }
       }
       const rest = cur.trim()
       if (rest) out.push(rest)
       return out
-    }
-    if (splitMode === "length") {
-      const n = fixedLength || 500
-      const out: string[] = []
-      for (let i = 0; i < s.length; i += n) out.push(s.slice(i, i + n))
-      return out.filter(Boolean)
     }
     return [s]
   }
@@ -394,7 +437,7 @@ export default function App() {
     let count = 0
     for (const f of Array.from(files)) {
       if (f.size > maxSize) {
-        setUploadInfo("file too large: " + f.name)
+        setUploadInfo("文件过大: " + f.name)
         continue
       }
       try {
@@ -404,7 +447,7 @@ export default function App() {
         all.push(...units)
         count += units.length
       } catch (e) {
-        setUploadInfo("failed: " + f.name)
+        setUploadInfo("导入失败: " + f.name)
       }
     }
     if (all.length) {
@@ -422,7 +465,7 @@ export default function App() {
         setSpans(spansByIndex[0] || [])
         setRelations(relationsByIndex[0] || [])
       }
-      setUploadInfo("imported " + count + " units")
+      setUploadInfo("已导入 " + count + " 条")
     }
   }
   const onDrop = async (e: React.DragEvent<HTMLDivElement>) => {
@@ -434,7 +477,7 @@ export default function App() {
     await handleFiles(input.files)
     if (input) input.value = ""
   }
-  const filteredIndices = items.map((_, i) => i).filter(i => items[i].toLowerCase().includes(search.toLowerCase()))
+  const filteredIndices = items.map((_, i) => i)
 
   const onSpanMouseDown = (id: number) => {
     setDragFromId(id)
@@ -505,7 +548,7 @@ export default function App() {
       if (editable) return
       if (e.ctrlKey && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); return }
       if (e.key === 'Delete') { if (selectedSpanId !== null) { removeSpanById(selectedSpanId); setSelectedSpanId(null); setRelFromId(null); } return }
-      if (e.key === 'Escape') { e.preventDefault(); setSelectedSpanId(null); setPending(null); setLabelPickerOpen(false); setRelPickerOpen(false); setRelFromId(null); return }
+      if (e.key === 'Escape') { e.preventDefault(); setSelectedSpanId(null); setPending(null); setLabelPickerOpen(false); setRelPickerOpen(false); setRelFromId(null); setShowSettings(false); return }
       if (e.key === 'ArrowLeft') { e.preventDefault(); prevItem(); return }
       if (e.key === 'ArrowRight') { e.preventDefault(); nextItem(); return }
       const d = Number(e.key)
@@ -535,60 +578,152 @@ export default function App() {
     highlightIds.add(relations[hoverRelIdx].toId)
   }
 
-  const onToggleSelect = (i: number, e: React.MouseEvent) => {
-    e.stopPropagation()
-    const newSet = new Set(selectedIndices)
-    if (newSet.has(i)) newSet.delete(i)
-    else newSet.add(i)
-    setSelectedIndices(newSet)
+  const applySyncData = (syncData: any) => {
+    if (syncData.project) {
+      setProjectName(syncData.project.name)
+      const l = syncData.project.labels
+      setLabelsInput(Array.isArray(l) ? l.join(",") : (l || ""))
+      const r = syncData.project.relation_types
+      setRelationTypesInput(Array.isArray(r) ? r.join(",") : (r || ""))
+    }
+
+    const newItems: string[] = []
+    const newDocIds: number[] = []
+    const newStatuses: any = {}
+    const newSpans: any = {}
+    const newRels: any = {}
+
+    if (syncData.documents && Array.isArray(syncData.documents)) {
+      syncData.documents.forEach((doc: any, i: number) => {
+        newItems.push(doc.text)
+        newDocIds.push(doc.id)
+        newStatuses[i] = doc.status
+        newSpans[i] = doc.spans || []
+        newRels[i] = doc.relations || []
+      })
+    }
+
+    setItems(newItems)
+    setDocIds(newDocIds)
+    setItemStatuses(newStatuses)
+    setSpansByIndex(newSpans)
+    setRelationsByIndex(newRels)
+
+    if (newItems.length > 0) {
+      setCurrentIndex(0)
+      setText(newItems[0])
+      setSpans(newSpans[0] || [])
+      setRelations(newRels[0] || [])
+    } else {
+      setCurrentIndex(-1)
+      setText("")
+      setSpans([])
+      setRelations([])
+    }
+  }
+
+  const loadProject = async (projectId: number) => {
+    const syncRes = await fetch(`http://localhost:8000/api/projects/${projectId}/sync`)
+    if (!syncRes.ok) throw new Error(await syncRes.text())
+    const syncData = await syncRes.json()
+    applySyncData(syncData)
   }
 
   const onClearAll = async () => {
-    if (!confirm("Are you sure you want to delete ALL data? This cannot be undone.")) return
+    if (!pid || !projectName) return
+    if (!confirm("确定要清空项目配置和待标注对象吗？此操作无法撤销。")) return
     try {
         const res = await fetch(`http://localhost:8000/api/projects/${pid}/clear`, { method: 'DELETE' })
-        if (!res.ok) throw new Error("Clear failed")
-        window.location.reload()
+        if (!res.ok) throw new Error("清空失败")
+        await loadProject(pid)
+        alert("已清空")
     } catch(e) {
-        alert("Clear failed: " + e)
+        alert("清空失败: " + e)
     }
   }
 
   const onDeleteDoc = async (i: number, e: React.MouseEvent) => {
       e.stopPropagation()
-      if (!confirm("Delete this document?")) return
+      if (!confirm("删除此标注对象？")) return
       const docId = docIds[i]
       if (docId && docId !== -1) {
           try {
               const res = await fetch(`http://localhost:8000/api/documents/${docId}`, { method: 'DELETE' })
-              if (!res.ok) throw new Error("Delete failed")
+              if (!res.ok) throw new Error("删除失败")
           } catch(e) {
-              alert("Delete failed: " + e)
+              alert("删除失败: " + e)
               return
           }
       }
-      // Remove from local state regardless of server status (if it was local only)
-      // Ideally reload to be safe, but for better UX let's reload
-      window.location.reload()
+      
+      // Update local state without reload
+      const newItems = [...items]
+      newItems.splice(i, 1)
+      setItems(newItems)
+      
+      const newDocIds = [...docIds]
+      newDocIds.splice(i, 1)
+      setDocIds(newDocIds)
+      
+      const newStatuses = { ...itemStatuses }
+      // Shift keys down for statuses > i
+      const updatedStatuses: Record<number, "pending" | "in_progress" | "completed"> = {}
+      Object.keys(newStatuses).forEach(k => {
+          const key = Number(k)
+          if (key < i) updatedStatuses[key] = newStatuses[key]
+          else if (key > i) updatedStatuses[key - 1] = newStatuses[key]
+      })
+      setItemStatuses(updatedStatuses)
+      
+      const newSpansByIndex = { ...spansByIndex }
+      const updatedSpansByIndex: Record<number, Span[]> = {}
+      Object.keys(newSpansByIndex).forEach(k => {
+          const key = Number(k)
+          if (key < i) updatedSpansByIndex[key] = newSpansByIndex[key]
+          else if (key > i) updatedSpansByIndex[key - 1] = newSpansByIndex[key]
+      })
+      setSpansByIndex(updatedSpansByIndex)
+      
+      const newRelationsByIndex = { ...relationsByIndex }
+      const updatedRelationsByIndex: Record<number, Relation[]> = {}
+      Object.keys(newRelationsByIndex).forEach(k => {
+          const key = Number(k)
+          if (key < i) updatedRelationsByIndex[key] = newRelationsByIndex[key]
+          else if (key > i) updatedRelationsByIndex[key - 1] = newRelationsByIndex[key]
+      })
+      setRelationsByIndex(updatedRelationsByIndex)
+      
+      // Reset current view
+      if (newItems.length === 0) {
+          setCurrentIndex(-1)
+          setText("")
+          setSpans([])
+          setRelations([])
+      } else {
+          // If deleted last item, go to previous, else stay at current index (which is now the next item)
+          const nextIdx = i >= newItems.length ? newItems.length - 1 : i
+          setCurrentIndex(nextIdx)
+          setText(newItems[nextIdx])
+          setSpans(updatedSpansByIndex[nextIdx] || [])
+          setRelations(updatedRelationsByIndex[nextIdx] || [])
+      }
+  }
+
+  const onDeleteProject = async () => {
+      if (!pid || !projectName) return
+      if (!confirm(`确定要彻底删除项目 "${projectName}" 吗？此操作不可恢复！`)) return
+      try {
+          const res = await fetch(`http://localhost:8000/api/projects/${pid}`, { method: 'DELETE' })
+          if (!res.ok) throw new Error("删除失败")
+          alert("项目已删除")
+          window.location.reload()
+      } catch(e) {
+          alert("删除失败: " + e)
+      }
   }
 
   const onExport = () => {
-    const idsToExport = selectedIndices.size > 0 
-        ? Array.from(selectedIndices).map(i => docIds[i]).filter(id => id && id !== -1)
-        : [] // If none selected, export all (default behavior handled by backend if list is empty/null? No, backend needs explicit list or None)
-    
-    // Logic: If selected, export selected. If none selected, export all.
-    
     let url = `http://localhost:8000/api/projects/${pid}/export`
-    if (idsToExport.length > 0) {
-        const query = idsToExport.map(id => `doc_ids=${id}`).join("&")
-        url += `?${query}`
-    } else if (selectedIndices.size > 0) {
-         // User selected items but they have no ID (not saved)?
-         alert("Selected items are not saved. Please save first.")
-         return
-    }
-    
     window.open(url, '_blank')
   }
 
@@ -624,7 +759,7 @@ export default function App() {
         body: JSON.stringify(payload), 
         headers: {'Content-Type': 'application/json'} 
       })
-      if (!res.ok) throw new Error("Save failed")
+      if (!res.ok) throw new Error("保存失败")
       
       const data = await res.json()
       if (data.documents && Array.isArray(data.documents)) {
@@ -636,295 +771,479 @@ export default function App() {
           setDocIds(newDocIds)
       }
       
-      alert("Project saved!")
+      alert("项目已保存！")
     } catch (e) {
-      alert("Save failed: " + e)
+      alert("保存失败: " + e)
     }
   }
 
+  const handleSwitchProject = async () => {
+    if(!projectName) return
+    try {
+        const res = await fetch('http://localhost:8000/api/projects', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                name: projectName,
+                labels: labels,
+                relation_types: relationTypes
+            })
+        })
+        if(!res.ok) throw new Error(await res.text())
+        const d = await res.json()
+        setPid(d.id)
+        alert(`切换到项目: ${d.name} (ID: ${d.id})`)
+        await fetchProjects()
+        await loadProject(d.id)
+    } catch(e) {
+        alert("创建/切换项目失败: " + e)
+    }
+  }
+
+  const handleConfigUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    try {
+      const buf = await readFileBuffer(file)
+      const text = tryDecode(buf)
+      const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean)
+      
+      const newLabels: string[] = []
+      const newRels: string[] = []
+      
+      let mode = 'labels' // default
+      for (const line of lines) {
+        let cleanLine = line
+        // Check for headers and switch mode
+        if (/^(LABELS|标签)[:：]?/i.test(line)) {
+          mode = 'labels'
+          cleanLine = line.replace(/^(LABELS|标签)[:：]?/i, '').trim()
+        } else if (/^(RELATIONS|关系)[:：]?/i.test(line)) {
+          mode = 'relations'
+          cleanLine = line.replace(/^(RELATIONS|关系)[:：]?/i, '').trim()
+        } else {
+            // Check if line looks like a header but wasn't caught (e.g. [Labels])
+            if (line.match(/^\[.*\]$/)) continue
+            if (line.startsWith('#')) continue
+        }
+
+        if (!cleanLine) continue
+
+        if (mode === 'labels') newLabels.push(cleanLine)
+        else newRels.push(cleanLine)
+      }
+      
+      if (newLabels.length > 0) setLabelsInput(newLabels.join(','))
+      if (newRels.length > 0) setRelationTypesInput(newRels.join(','))
+      
+      alert(`已导入 ${newLabels.length > 0 ? '标签' : ''} ${newRels.length > 0 ? '关系' : ''}`)
+    } catch (err) {
+      alert("配置导入失败: " + err)
+    }
+    e.target.value = ""
+  }
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100vh" }}>
-      <div style={{ padding: "12px 24px", background: "#f8f9fa", borderBottom: "1px solid #e9ecef", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <h2 style={{ margin: 0, fontSize: "1.25rem", color: "#333" }}>Annotation Platform</h2>
-          <button onClick={() => window.open('http://localhost:8000/minimind/', '_blank')} style={{ padding: "8px 16px", background: "#6f42c1", color: "white", border: "none", borderRadius: 4, cursor: "pointer", fontWeight: 500 }}>
-            Switch to Image Labeler
+    <div className="app-container">
+      <header className="header">
+          <div className="flex items-center gap-4">
+              <h2>文本类标注平台</h2>
+              <button className="btn btn-sm" onClick={() => setShowSettings(true)}>设置</button>
+          </div>
+          <button className="btn btn-primary" onClick={() => window.location.href = 'http://localhost:8000/minimind/'}>
+            切换到图像类标注平台
           </button>
-      </div>
-      <div style={{ display: "flex", gap: 80, padding: 24, flex: 1, overflow: "hidden" }}>
-      <div style={{ width: 380, overflowY: "auto", paddingRight: 8, flexShrink: 0 }}>
-        <div style={{ display: "grid", gap: 8 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-             <span style={{ fontWeight: "bold" }}>Project Config</span>
-             <div style={{ display: "flex", gap: 8 }}>
-               <button onClick={onSave} style={{ padding: "4px 8px", background: "#28a745", color: "white", border: "none", borderRadius: 4, cursor: "pointer" }}>Save</button>
-               <button onClick={onExport} style={{ padding: "4px 8px", background: "#007bff", color: "white", border: "none", borderRadius: 4, cursor: "pointer" }}>Export JSON</button>
-               <button onClick={onClearAll} style={{ padding: "4px 8px", background: "#dc3545", color: "white", border: "none", borderRadius: 4, cursor: "pointer" }}>Clear All</button>
+      </header>
+      
+      <div className="main-content">
+        <aside className="sidebar">
+          <div className="sidebar-header">
+            <div className="flex justify-between items-center mb-2">
+               <span className="sidebar-title" style={{marginBottom:0}}>项目配置</span>
+               <div className="flex gap-2">
+                 <button onClick={onSave} className="btn btn-primary btn-sm" disabled={!projectName || !pid}>保存</button>
+                 <button onClick={onExport} className="btn btn-sm" disabled={!projectName || !pid}>导出</button>
+               </div>
+            </div>
+            <div className="flex flex-col gap-2 mb-2">
+              <select className="input" onChange={async (e) => {
+                  const id = Number(e.target.value)
+                  if (!id) return
+                  const p = projectList.find(x => x.id === id)
+                  if (!p) return
+                  setPid(p.id)
+                  setProjectName(p.name)
+                  try {
+                    await loadProject(p.id)
+                  } catch (err) {
+                    alert("加载项目失败: " + err)
+                  }
+              }} value={pid ? String(pid) : ""}>
+                  <option value="">-- 选择已有项目 --</option>
+                  {projectList.map(p => <option key={p.id} value={String(p.id)}>{p.name}</option>)}
+              </select>
+              <div className="flex gap-2">
+                <input className="input" value={projectName} onChange={e => setProjectName(e.target.value)} placeholder="项目名称" />
+                <button onClick={handleSwitchProject} className="btn btn-primary btn-sm">切换/创建</button>
+              </div>
+            </div>
+            <div className="flex gap-2">
+                <button type="button" onClick={onClearAll} className="btn btn-danger btn-sm" style={{flex: 1}} disabled={!projectName || !pid}>清空数据</button>
+                <button type="button" onClick={onDeleteProject} className="btn btn-danger btn-sm" style={{flex: 1}} disabled={!projectName || !pid}>删除项目</button>
+            </div>
+            
+            <div className="mt-4">
+              <div className="text-sm text-gray mb-2">上传配置 (TXT):</div>
+              <input type="file" accept=".txt" onChange={handleConfigUpload} className="input" style={{padding: '4px'}} />
+            </div>
+          </div>
+
+          <div className="sidebar-content" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
+            <div className="mb-4" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+              <div className="sidebar-title">文档列表</div>
+              <div 
+                onDragOver={e => e.preventDefault()} 
+                onDrop={onDrop} 
+                style={{ border: "2px dashed var(--border)", borderRadius: "var(--radius)", padding: "12px", textAlign: "center", marginBottom: "1rem" }}
+              >
+                <div className="text-sm text-gray mb-2">拖拽 .txt 文件到此处</div>
+                <input type="file" multiple accept=".txt" onChange={onSelectFiles} style={{maxWidth: '100%'}} />
+                <div className="segmentation-wrapper" ref={splitHelpRef}>
+                  <div className="segmentation-header">
+                    <span className="segmentation-title">切分方式</span>
+                    <button 
+                      type="button"
+                      className="help-icon-btn"
+                      onClick={() => setSplitHelpOpen(true)}
+                      title="查看详细说明"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                      </svg>
+                      <span>说明</span>
+                    </button>
+                  </div>
+                  <div className="segmentation-tabs">
+                    <button
+                      type="button"
+                      onClick={() => setSplitMode('as_is')}
+                      className={`tab-item ${splitMode === 'as_is' ? 'active' : ''}`}
+                    >
+                      <IconOriginal active={splitMode === 'as_is'} />
+                      <span>原文</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSplitMode('paragraph')}
+                      className={`tab-item ${splitMode === 'paragraph' ? 'active' : ''}`}
+                    >
+                      <IconParagraph active={splitMode === 'paragraph'} />
+                      <span>段落</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSplitMode('sentence')}
+                      className={`tab-item ${splitMode === 'sentence' ? 'active' : ''}`}
+                    >
+                      <IconSentence active={splitMode === 'sentence'} />
+                      <span>句子</span>
+                    </button>
+                  </div>
+                </div>
+                <div className="text-sm text-gray mt-1">{uploadInfo}</div>
+              </div>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, overflowY: 'auto', minHeight: 0 }}>
+                {filteredIndices.length === 0 ? (
+                   <div style={{ 
+                       border: "1px dashed var(--border)", 
+                       borderRadius: "var(--radius)", 
+                       padding: "1rem", 
+                       textAlign: "left", 
+                       color: "gray",
+                       fontSize: "0.85rem",
+                       background: "rgba(0,0,0,0.02)",
+                       flex: 1,
+                       display: 'flex',
+                       alignItems: 'flex-start',
+                       justifyContent: 'flex-start',
+                       overflowY: 'auto',
+                       whiteSpace: 'pre-wrap'
+                   }}>
+                       暂无待标注对象，请导入数据
+                   </div>
+                ) : (
+                  filteredIndices.map((i, idx) => (
+                  <div 
+                    key={i} 
+                    onClick={() => { saveCurrent(); loadIndex(i) }} 
+                    className={`list-item ${currentIndex === i ? 'active' : ''}`}
+                  >
+                    <div className="flex items-center gap-2 overflow-hidden">
+                        <span className="count-badge">{idx + 1}</span>
+                        <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{items[i]}</div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <div className={`status-badge ${itemStatuses[i] || 'pending'}`} title={itemStatuses[i]}></div>
+                    </div>
+                  </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        </aside>
+
+        <main className="workspace">
+          <div className="flex items-center justify-between">
+             <div className="flex items-center gap-4">
+                <div className="flex gap-2">
+                  <button onClick={prevItem} className="btn">上一篇</button>
+                  <button onClick={nextItem} className="btn">下一篇</button>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="text-sm font-medium">
+                    {currentIndex>=0 ? `待标注对象 ${currentIndex+1} / ${items.length}` : "无待标注对象"}
+                  </div>
+                  {currentIndex >= 0 && items.length > 0 && (
+                    <button 
+                      onClick={(e) => onDeleteDoc(currentIndex, e)} 
+                      className="btn btn-danger"
+                    >
+                      删除当前
+                    </button>
+                  )}
+                </div>
+             </div>
+             <div className="flex gap-2">
+                <button onClick={handleSkip} className="btn">跳过</button>
+                <button onClick={handleSaveOnly} className="btn">保存 {currentIndex>=0 && itemStatuses[currentIndex]==='completed'?"✅":""}</button>
+                <button onClick={handleSaveAndNext} className="btn btn-primary">保存并下一篇</button>
              </div>
           </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <input value={projectName} onChange={e => setProjectName(e.target.value)} placeholder="Project name" style={{ flex: 1 }} />
-            <button onClick={async () => {
-                if(!projectName) return
-                try {
-                    const res = await fetch('http://localhost:8000/api/projects', {
-                        method: 'POST',
-                        headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({
-                            name: projectName,
-                            labels: labels,
-                            relation_types: relationTypes
-                        })
-                    })
-                    if(!res.ok) throw new Error(await res.text())
-                    const d = await res.json()
-                    setPid(d.id)
-                    alert(`Switched to Project: ${d.name} (ID: ${d.id})`)
-                    // Reload data for this new project
-                    const syncRes = await fetch(`http://localhost:8000/api/projects/${d.id}/sync`)
-                    if(syncRes.ok) {
-                        const syncData = await syncRes.json()
-                        // Update state manually instead of reloading
-                        if (syncData.project) {
-                          setProjectName(syncData.project.name)
-                          const l = syncData.project.labels
-                          setLabelsInput(Array.isArray(l) ? l.join(",") : (l || "PER,LOC,ORG"))
-                          const r = syncData.project.relation_types
-                          setRelationTypesInput(Array.isArray(r) ? r.join(",") : (r || "LOCATED_IN,WORKS_AT,FOUNDED_IN"))
-                        }
 
-                        const newItems: string[] = []
-                        const newDocIds: number[] = []
-                        const newStatuses: any = {}
-                        const newSpans: any = {}
-                        const newRels: any = {}
+          {/* Label/Relation Shortcuts */}
+          <div className="card mb-4" style={{padding: '1rem', marginBottom: '1rem'}}>
+             <div className="flex flex-wrap gap-4">
+                <div className="flex-1">
+                   <h4 className="text-sm font-bold mb-2">实体标签 (快捷键 1-9)</h4>
+                   <div className="flex flex-wrap gap-2">
+                     {labels.map((l, i) => (
+                       <button key={l} onClick={() => addSpan(l)} className="label-chip" style={{background: palette[l], border: '1px solid rgba(0,0,0,0.1)', cursor: 'pointer', display: 'flex', alignItems: 'center'}}>
+                          {i < 9 && (
+                            <span style={{
+                               background: 'rgba(255,255,255,0.5)',
+                               borderRadius: 3,
+                               padding: '0px 4px',
+                               marginRight: 6,
+                               fontSize: '0.75rem',
+                               fontWeight: 'bold',
+                               fontFamily: 'monospace',
+                               boxShadow: '0 1px 0 rgba(0,0,0,0.1)'
+                            }}>
+                              {i+1}
+                            </span>
+                          )}
+                          {l}
+                       </button>
+                     ))}
+                     {labels.length === 0 && <span className="text-gray text-xs">请导入配置</span>}
+                   </div>
+                </div>
+                <div className="flex-1" style={{borderLeft: '1px solid #eee', paddingLeft: '1rem'}}>
+                   <h4 className="text-sm font-bold mb-2">关系类型 (快捷键 Ctrl+1-9)</h4>
+                   <div className="flex flex-wrap gap-2">
+                     {relationTypes.map((t, i) => (
+                       <button key={t} onClick={() => addRelation(t)} className="label-chip" style={{background: relPalette[t], color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center'}}>
+                          {i < 9 && (
+                            <span style={{
+                               background: 'rgba(255,255,255,0.3)',
+                               borderRadius: 3,
+                               padding: '0px 4px',
+                               marginRight: 6,
+                               fontSize: '0.75rem',
+                               fontWeight: 'bold',
+                               fontFamily: 'monospace',
+                               boxShadow: '0 1px 0 rgba(0,0,0,0.1)'
+                            }}>
+                              {i+1}
+                            </span>
+                          )}
+                          {t}
+                       </button>
+                     ))}
+                     {relationTypes.length === 0 && <span className="text-gray text-xs">请导入配置</span>}
+                   </div>
+                </div>
+             </div>
+          </div>
 
-                        if (syncData.documents && Array.isArray(syncData.documents)) {
-                           syncData.documents.forEach((doc: any, i: number) => {
-                             newItems.push(doc.text)
-                             newDocIds.push(doc.id)
-                             newStatuses[i] = doc.status
-                             newSpans[i] = doc.spans || []
-                             newRels[i] = doc.relations || []
-                           })
-                        }
-                        
-                        setItems(newItems)
-                        setDocIds(newDocIds)
-                        setItemStatuses(newStatuses)
-                        setSpansByIndex(newSpans)
-                        setRelationsByIndex(newRels)
-                        
-                        if (newItems.length > 0) {
-                          setCurrentIndex(0)
-                          setText(newItems[0])
-                          setSpans(newSpans[0] || [])
-                          setRelations(newRels[0] || [])
-                        } else {
-                          setCurrentIndex(-1)
-                          setText("")
-                          setSpans([])
-                          setRelations([])
-                        }
-                    }
-                } catch(e) {
-                    alert("Failed to create/switch project: " + e)
-                }
-            }} style={{ padding: "4px 8px", cursor: "pointer" }}>Switch/Create</button>
+
+
+          <div className="card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 400, flex: 1 }}>
+             <div 
+               ref={containerRef} 
+               tabIndex={0} 
+               onMouseUp={onMouseUp} 
+               onContextMenu={onContainerContextMenu} 
+               className="annotation-area"
+               style={{ 
+                 fontSize: fontSize, 
+                 lineHeight: lineH, 
+                 padding: "3rem", 
+                 minHeight: 300, 
+                 flex: 1,
+                 background: "#fff",
+                 outline: 'none'
+               }}
+             >
+              {chars.map((ch, i) => (
+                <span key={i} ref={el => { charRefs.current[i] = el }}>
+                  {ch}
+                </span>
+              ))}
+              {spans.map(s => {
+                const segs = spanSegments(s.start, s.end, charRects)
+                const color = palette[s.label]
+                return segs.map((seg, idx) => (
+                  <div key={`${s.id}-${idx}`} onMouseDown={() => onSpanMouseDown(s.id)} onMouseUp={() => onSpanMouseUp(s.id)} onClick={() => onSpanClick(s.id)}
+                       style={{ position: 'absolute', left: seg.x, top: seg.y, width: seg.w, height: seg.h, background: rgba(color, labelAlpha), borderRadius: 4, outline: selectedSpanId===s.id? '2px solid #333': undefined, transition: 'outline 150ms', cursor: 'pointer' }} />
+                ))
+              })}
+              <svg style={{ position: "absolute", left: 0, top: 0, width: "100%", height: overlayHeight > 0 ? overlayHeight : "100%", pointerEvents: "none" }}>
+                <defs>
+                  <marker id="arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+                    <path d="M0,0 L6,3 L0,6 Z" fill="#333" />
+                  </marker>
+                </defs>
+                {relations.map((r, i) => {
+                  const a = boxes[r.fromId]
+                  const b = boxes[r.toId]
+                  if (!a || !b) return null
+                  
+                  const y1 = a.y - 8
+                  const y2 = b.y - 8
+                  const x1 = a.x
+                  const x2 = b.x
+                  
+                  const minY = Math.min(y1, y2)
+                  const dy = Math.abs(y2 - y1)
+                  
+                  const arcHeight = 25 + Math.min(dy * 0.4, 80)
+                  const cpY = Math.max(12, Math.min(minY - 18, minY - arcHeight))
+                  
+                  const mx = (x1 + x2) / 2
+                  
+                  const color = relPalette[r.type] || "#333"
+                  const isHovered = hoverRelIdx === i
+                  const labelY = Math.max(12, cpY - 4)
+                  
+                  return (
+                    <g key={i} onMouseEnter={() => setHoverRelIdx(i)} onMouseLeave={() => setHoverRelIdx(null)} style={{ pointerEvents: "auto" }}>
+                      <path 
+                        d={`M ${x1} ${y1} C ${mx} ${cpY}, ${mx} ${cpY}, ${x2} ${y2}`} 
+                        stroke={color} 
+                        fill="none" 
+                        strokeWidth={isHovered ? Math.max(relStrokeWidth, relStrokeWidth + 1) : relStrokeWidth} 
+                        markerEnd="url(#arrow)" 
+                        strokeDasharray={relDashed ? '6 4' : undefined} 
+                        opacity={isHovered ? 1 : 0.7}
+                      />
+                      <text 
+                        x={mx} 
+                        y={labelY} 
+                        fill={color} 
+                        fontSize={12} 
+                        textAnchor="middle"
+                        fontWeight={isHovered ? "bold" : "normal"}
+                        style={{ textShadow: '0 1px 2px rgba(255,255,255,0.8)' }}
+                      >
+                        {r.type}
+                      </text>
+                    </g>
+                  )
+                })}
+              </svg>
+             </div>
           </div>
-          <div style={{ marginTop: 8 }}>
-            <div style={{ marginBottom: 4, fontSize: '0.9em', color: '#666' }}>Upload Config (TXT):</div>
-            <input type="file" accept=".txt" onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (!file) return;
-              const reader = new FileReader();
-              reader.onload = (event) => {
-                const content = event.target?.result as string;
-                if (!content) return;
-                
-                // Parse the config file
-                // Expected format:
-                // LABELS: PER, LOC, ORG
-                // RELATIONS: WORKS_AT, LOCATED_IN
-                
-                const lines = content.split('\n');
-                let newLabels = "";
-                let newRelations = "";
-                
-                lines.forEach(line => {
-                  const trimLine = line.trim();
-                  if (trimLine.startsWith("LABELS:")) {
-                    newLabels = trimLine.substring(7).trim();
-                  } else if (trimLine.startsWith("RELATIONS:")) {
-                    newRelations = trimLine.substring(10).trim();
-                  }
-                });
-                
-                if (newLabels) setLabelsInput(newLabels);
-                if (newRelations) setRelationTypesInput(newRelations);
-                
-                alert("Config loaded from file!");
-              };
-              reader.readAsText(file);
-              // Reset input
-              e.target.value = '';
-            }} />
-          </div>
-          <input value={labelsInput} onChange={e => setLabelsInput(e.target.value)} placeholder="Labels comma separated" />
-          <input value={relationTypesInput} onChange={e => setRelationTypesInput(e.target.value)} placeholder="Relation types comma separated" />
-          <textarea value={text} onChange={e => setText(e.target.value)} rows={6} />
-          <button onClick={() => { setSpans([]); setRelations([]) }}>Clear annotations</button>
-        </div>
-        <div style={{ marginTop: 16, display: "grid", gap: 8 }}>
-          <div>Upload TXT</div>
-          <div onDragOver={e => e.preventDefault()} onDrop={onDrop} style={{ border: "2px dashed #bbb", borderRadius: 8, padding: 12 }}>
-            <div>Drop .txt files here or select</div>
-            <input type="file" multiple accept=".txt" onChange={onSelectFiles} />
-            <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-              <label><input type="radio" checked={splitMode==='as_is'} onChange={() => setSplitMode('as_is')} /> as_is</label>
-              <label><input type="radio" checked={splitMode==='paragraph'} onChange={() => setSplitMode('paragraph')} /> paragraph</label>
-              <label><input type="radio" checked={splitMode==='sentence'} onChange={() => setSplitMode('sentence')} /> sentence</label>
-              <label><input type="radio" checked={splitMode==='length'} onChange={() => setSplitMode('length')} /> length</label>
-              {splitMode==='length' && (<input type="number" value={fixedLength} onChange={e => setFixedLength(parseInt(e.target.value||'500'))} style={{ width: 80 }} />)}
+
+          {/* Floating Pickers */}
+          {labelPickerOpen && pending && (
+            <div className="card" style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', zIndex: 100, padding: '1rem', display: "flex", gap: 8, flexWrap: "wrap", maxWidth: 400 }}>
+              <div className="w-full text-sm font-bold mb-2">选择标签</div>
+              {labels.map(l => (
+                <button key={l} onClick={() => addSpan(l)} className="label-chip" style={{ background: palette[l], cursor: 'pointer', fontSize: '0.9rem', padding: '4px 12px' }}>{l}</button>
+              ))}
+              <button onClick={() => setLabelPickerOpen(false)} className="btn btn-sm" style={{marginLeft: 'auto'}}>取消</button>
             </div>
-            <div>{uploadInfo}</div>
-          </div>
-          <input placeholder="Search" value={search} onChange={e => setSearch(e.target.value)} />
-          <div style={{ maxHeight: 240, overflow: "auto", border: "1px solid #eee", borderRadius: 6 }}>
-            {filteredIndices.map(i => (
-              <div key={i} onClick={() => { saveCurrent(); loadIndex(i) }} style={{ padding: 8, cursor: "pointer", background: currentIndex===i?"#f0f0f0":undefined, display: "flex", justifyContent: "space-between", alignItems: 'center' }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, overflow: "hidden" }}>
-                    <input type="checkbox" checked={selectedIndices.has(i)} onClick={(e) => onToggleSelect(i, e)} onChange={()=>{}} />
-                    <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 160 }}>{items[i]}</div>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                    <div>{itemStatuses[i]==='completed'?"✅":itemStatuses[i]==='in_progress'?"⏳":"🕒"}</div>
-                    <button onClick={(e) => onDeleteDoc(i, e)} style={{ border: "none", background: "transparent", cursor: "pointer", color: "#dc3545" }}>×</button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div style={{ marginTop: 16 }}>
-          <div>Labels</div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-            {labels.map(l => (
-              <div key={l} style={{ background: palette[l], padding: "4px 8px", borderRadius: 4 }}>{l}</div>
-            ))}
-          </div>
-        </div>
-        <div style={{ marginTop: 16 }}>
-          <div>Relation Types</div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-            {relationTypes.map(t => (
-              <div key={t} style={{ background: relPalette[t], padding: "4px 8px", borderRadius: 4, color: "#fff" }}>{t}</div>
-            ))}
-          </div>
-        </div>
-        <div style={{ marginTop: 16 }}>
-          <div>Theme & Shortcuts</div>
-          <div style={{ display: 'grid', gap: 8 }}>
-            <label>Font size <input type="number" value={fontSize} onChange={e => setFontSize(parseInt(e.target.value||'18'))} style={{ width: 80 }} /></label>
-            <label>Line height <input type="number" value={lineH} step={0.1} onChange={e => setLineH(parseFloat(e.target.value||'1.8'))} style={{ width: 80 }} /></label>
-            <label>Relation width <input type="number" value={relStrokeWidth} onChange={e => setRelStrokeWidth(parseInt(e.target.value||'2'))} style={{ width: 80 }} /></label>
-            <label><input type="checkbox" checked={relDashed} onChange={e => setRelDashed(e.target.checked)} /> Dashed relation</label>
-            <div style={{ fontSize: 12, color: '#555' }}>
-              点击一个实体后再点另一个实体可添加关系；1-9 选择实体；Ctrl+1-9 选择关系；Space 确认/下一项；Ctrl+Z 撤销；Delete 删除选中；← → 导航
+          )}
+          {relPickerOpen && pendingRel && (
+            <div className="card" style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', zIndex: 100, padding: '1rem', display: "flex", gap: 8, flexWrap: "wrap", maxWidth: 400 }}>
+              <div className="w-full text-sm font-bold mb-2">选择关系</div>
+              {relationTypes.map(t => (
+                <button key={t} onClick={() => addRelation(t)} className="label-chip" style={{ background: relPalette[t], color: "#fff", cursor: 'pointer', fontSize: '0.9rem', padding: '4px 12px' }}>{t}</button>
+              ))}
+              <button onClick={() => setRelPickerOpen(false)} className="btn btn-sm" style={{marginLeft: 'auto'}}>取消</button>
             </div>
-          </div>
-        </div>
+          )}
+
+
+        </main>
       </div>
-      <div style={{ flex: 1, position: "relative", maxWidth: "none", overflowY: "auto", paddingRight: 16 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-          <button onClick={prevItem}>Prev</button>
-          <button onClick={nextItem}>Next</button>
-          <div style={{ width: 16 }}></div>
-          <button onClick={handleSaveAndNext} style={{ background: "#28a745", color: "white", border: "none", borderRadius: 4, padding: "4px 8px", cursor: "pointer" }}>Save & Next</button>
-          <button onClick={handleSkip} style={{ background: "#6c757d", color: "white", border: "none", borderRadius: 4, padding: "4px 8px", cursor: "pointer" }}>Skip</button>
-          <div style={{ width: 16 }}></div>
-          <div>{currentIndex>=0?`第${currentIndex+1}/共${items.length}`:"未导入"}</div>
-          <button onClick={markCompleted}>Mark completed</button>
-          <div>{currentIndex>=0 && itemStatuses[currentIndex]==='completed'?"✅":null}</div>
+      
+      {/* Settings Modal */}
+      {showSettings && (
+        <div className="modal-overlay" onClick={() => setShowSettings(false)}>
+            <div className="modal-content" onClick={e => e.stopPropagation()}>
+                <div className="modal-header">
+                    <h3 className="modal-title">主题与快捷键</h3>
+                    <button onClick={() => setShowSettings(false)} className="btn btn-sm">×</button>
+                </div>
+                
+                <div className="settings-grid">
+                    <div className="settings-group">
+                        <label className="flex justify-between items-center">
+                            字体大小 (px)
+                            <input type="number" className="input" style={{width: 80}} value={fontSize} onChange={e => setFontSize(parseInt(e.target.value||'18'))} />
+                        </label>
+                        <label className="flex justify-between items-center">
+                            行高 (倍数)
+                            <input type="number" className="input" style={{width: 80}} value={lineH} step={0.1} onChange={e => setLineH(parseFloat(e.target.value||'1.8'))} />
+                        </label>
+                        <label className="flex justify-between items-center">
+                            关系线宽 (px)
+                            <input type="number" className="input" style={{width: 80}} value={relStrokeWidth} onChange={e => setRelStrokeWidth(parseInt(e.target.value||'2'))} />
+                        </label>
+                        <label className="flex items-center gap-2">
+                            <input type="checkbox" checked={relDashed} onChange={e => setRelDashed(e.target.checked)} /> 
+                            虚线关系
+                        </label>
+                    </div>
+                    
+                    <div>
+                        <div className="font-bold text-sm mb-2">快捷键说明</div>
+                        <div className="shortcut-list">
+                            <div className="shortcut-item"><span>选择实体</span> <span className="shortcut-key">1-9</span></div>
+                            <div className="shortcut-item"><span>选择关系</span> <span className="shortcut-key">Ctrl+1-9</span></div>
+                            <div className="shortcut-item"><span>确认 / 下一篇</span> <span className="shortcut-key">Space</span></div>
+                            <div className="shortcut-item"><span>撤销</span> <span className="shortcut-key">Ctrl+Z</span></div>
+                            <div className="shortcut-item"><span>删除选中</span> <span className="shortcut-key">Delete</span></div>
+                            <div className="shortcut-item"><span>切换文档</span> <span className="shortcut-key">← / →</span></div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div className="flex justify-end mt-4">
+                    <button onClick={() => setShowSettings(false)} className="btn btn-primary">关闭</button>
+                </div>
+            </div>
         </div>
-        <div ref={containerRef} tabIndex={0} onMouseUp={onMouseUp} onContextMenu={onContainerContextMenu} style={{ fontSize: fontSize, lineHeight: lineH, userSelect: "text", cursor: "text", border: "1px solid #ddd", borderRadius: 6, padding: "50px 24px 24px 24px", minHeight: 160, position: "relative", whiteSpace: "pre-wrap", overflow: "hidden", background: "#fff", maxWidth: "80%" }}>
-          {chars.map((ch, i) => (
-            <span key={i} ref={el => { charRefs.current[i] = el }}>
-              {ch}
-            </span>
-          ))}
-          {spans.map(s => {
-            const segs = spanSegments(s.start, s.end, charRects)
-            const color = palette[s.label]
-            return segs.map((seg, idx) => (
-              <div key={`${s.id}-${idx}`} onMouseDown={() => onSpanMouseDown(s.id)} onMouseUp={() => onSpanMouseUp(s.id)} onClick={() => onSpanClick(s.id)}
-                   style={{ position: 'absolute', left: seg.x, top: seg.y, width: seg.w, height: seg.h, background: rgba(color, labelAlpha), borderRadius: 4, outline: selectedSpanId===s.id? '2px solid #333': undefined, transition: 'outline 150ms', cursor: 'pointer' }} />
-            ))
-          })}
-          <svg style={{ position: "absolute", left: 0, top: 0, width: "100%", height: "100%", pointerEvents: "none" }}>
-            <defs>
-              <marker id="arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
-                <path d="M0,0 L6,3 L0,6 Z" fill="#333" />
-              </marker>
-            </defs>
-            {relations.map((r, i) => {
-              const a = boxes[r.fromId]
-              const b = boxes[r.toId]
-              if (!a || !b) return null
-              const dy = Math.abs(b.y - a.y)
-              const y = Math.min(a.y, b.y) - 10
-              const x1 = a.x
-              const x2 = b.x
-              const mx = (x1 + x2) / 2
-              const color = relPalette[r.type] || "#333"
-              return (
-                <g key={i} onMouseEnter={() => setHoverRelIdx(i)} onMouseLeave={() => setHoverRelIdx(null)} style={{ pointerEvents: "auto" }}>
-                  <path d={`M ${x1} ${y} C ${mx} ${y-20-dy*0.2}, ${mx} ${y-20-dy*0.2}, ${x2} ${y}`} stroke={color} fill="none" strokeWidth={hoverRelIdx===i?Math.max(relStrokeWidth, relStrokeWidth+1):relStrokeWidth} markerEnd="url(#arrow)" strokeDasharray={relDashed? '6 4': undefined} />
-                  <text x={mx} y={y-24-dy*0.2} fill={color} fontSize={12} textAnchor="middle">{r.type}</text>
-                </g>
-              )
-            })}
-          </svg>
-        </div>
-        {labelPickerOpen && pending && (
-          <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {labels.map(l => (
-              <button key={l} onClick={() => addSpan(l)} style={{ background: palette[l], border: "1px solid #ccc", borderRadius: 4, padding: "4px 8px" }}>{l}</button>
-            ))}
-          </div>
-        )}
-        {relPickerOpen && pendingRel && (
-          <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {relationTypes.map(t => (
-              <button key={t} onClick={() => addRelation(t)} style={{ background: relPalette[t], color: "#fff", border: "1px solid #ccc", borderRadius: 4, padding: "4px 8px" }}>{t}</button>
-            ))}
-          </div>
-        )}
-        <div style={{ marginTop: 16 }}>
-          <div>Annotations</div>
-          <div style={{ display: "grid", gap: 6 }}>
-            {spans.map(s => (
-              <div key={s.id} style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <div>{s.start}-{s.end} {s.label} {text.slice(s.start, s.end)}</div>
-                <button onClick={() => removeSpanById(s.id)}>Delete</button>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div style={{ marginTop: 16 }}>
-          <div>Relations</div>
-          <div style={{ display: "grid", gap: 6 }}>
-            {relations.map((r, i) => (
-              <div key={i} style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <select value={r.type} onChange={e => updateRelationType(i, e.target.value)}>
-                  {relationTypes.map(t => <option key={t} value={t}>{t}</option>)}
-                </select>
-                <div>{r.fromId} → {r.toId}</div>
-                <button onClick={() => deleteRelation(i)}>Delete</button>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
+      )}
+      
+      {/* Help Modal */}
+      <HelpModal isOpen={splitHelpOpen} onClose={() => setSplitHelpOpen(false)} />
     </div>
-  </div>
   )
 }

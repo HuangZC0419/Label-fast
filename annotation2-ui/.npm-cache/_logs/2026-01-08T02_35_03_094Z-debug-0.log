@@ -1,0 +1,13 @@
+0 verbose cli E:\node\node.exe E:\node\node_modules\npm\bin\npm-cli.js
+1 info using npm@10.9.2
+2 info using node@v22.15.0
+3 silly config load:file:E:\node\node_modules\npm\npmrc
+4 silly config load:file:H:\Git\Annotation2\annotation2-ui\.npmrc
+5 silly config load:file:C:\Users\11597\.npmrc
+6 silly config load:file:C:\Users\11597\AppData\Roaming\npm\etc\npmrc
+7 verbose title npm run dev
+8 verbose argv "run" "dev"
+9 verbose logfile logs-max:10 dir:H:\Git\Annotation2\annotation2-ui\.npm-cache\_logs\2026-01-08T02_35_03_094Z-
+10 verbose logfile H:\Git\Annotation2\annotation2-ui\.npm-cache\_logs\2026-01-08T02_35_03_094Z-debug-0.log
+11 silly logfile start cleaning logs, removing 1 files
+12 silly logfile done cleaning log files

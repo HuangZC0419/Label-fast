@@ -3,25 +3,29 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Minimind Image Labeler</title>
+    <title>图像类标注平台</title>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body { font-family: 'Inter', sans-serif; }
         .image-container {
-            /* max-height removed to let flex handle it */
-            overflow: auto;
+            overflow: hidden;
             display: flex;
-            /* margin: auto on img handles centering + scrolling */
             background-color: #f3f4f6;
             border-radius: 0.5rem;
             position: relative;
+            user-select: none;
+            touch-action: none;
         }
         .image-container img {
             margin: auto;
             display: block;
-            transition: width 0.1s ease-out, height 0.1s ease-out;
-            will-change: width, height;
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            -webkit-user-drag: none;
+            user-select: none;
+            pointer-events: none;
         }
     </style>
 </head>
@@ -30,46 +34,72 @@
 <div id="app" class="flex flex-col h-full">
     <!-- Header -->
     <header class="bg-white shadow p-4 flex justify-between items-center z-10">
-        <h1 class="text-xl font-bold text-indigo-600">Minimind Image Labeler</h1>
+        <h1 class="text-xl font-bold text-indigo-600">图像类标注平台</h1>
         <div class="flex items-center gap-4">
+            <button onclick="window.location.href='http://localhost:5173/'" class="bg-blue-600 text-white px-4 py-2 rounded-lg font-medium text-sm hover:bg-blue-700 transition-colors flex items-center gap-1">
+                切换到文本类标注平台
+            </button>
+            <div class="h-6 w-px bg-gray-300 mx-2"></div>
             <div class="text-sm text-gray-500">
                 已标注: <span class="font-bold text-green-600">{{ labeledCount }}</span> / {{ totalImages }}
             </div>
-            <button @click="showConfig = !showConfig" class="text-gray-500 hover:text-gray-700">
-                ⚙️ 设置
-            </button>
         </div>
     </header>
 
-    <!-- Config Modal -->
-    <div v-if="showConfig" class="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
-        <div class="bg-white p-6 rounded shadow-lg w-96">
-            <h2 class="text-lg font-bold mb-4">系统设置</h2>
-            <div class="mb-4">
-                <label class="block text-sm font-medium text-gray-700">图片文件夹路径</label>
-                <input v-model="config.image_dir" class="mt-1 block w-full border border-gray-300 rounded px-2 py-1">
-            </div>
-            <div class="mb-4">
-                <label class="block text-sm font-medium text-gray-700">输出 JSONL 路径</label>
-                <input v-model="config.jsonl_path" class="mt-1 block w-full border border-gray-300 rounded px-2 py-1">
-            </div>
-            <div class="flex justify-end gap-2">
-                <button @click="saveConfig" class="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700">保存并刷新</button>
-                <button @click="showConfig = false" class="text-gray-500 hover:text-gray-700 px-4 py-2">取消</button>
-            </div>
-        </div>
-    </div>
-
     <!-- Main Content -->
     <div class="flex-1 flex overflow-hidden">
-        <!-- Sidebar (Image List) -->
-        <div class="w-64 bg-white border-r overflow-y-auto hidden md:block">
-            <div v-for="(img, index) in images" :key="img" 
-                 @click="selectImage(index)"
-                 class="p-2 cursor-pointer hover:bg-gray-100 text-sm truncate flex justify-between items-center"
-                 :class="{'bg-indigo-50 border-l-4 border-indigo-600': currentIndex === index, 'text-green-600': isLabeled(img)}">
-                <span>{{ img }}</span>
-                <span v-if="isLabeled(img)" class="text-xs">✓</span>
+        <!-- Sidebar (Project & Image List) -->
+        <div class="w-80 bg-white border-r flex flex-col hidden md:flex">
+            <!-- Project Configuration -->
+            <div class="p-4 border-b bg-gray-50 flex flex-col gap-3">
+                <div class="font-bold text-gray-700 flex justify-between items-center">
+                    <span>项目配置</span>
+                    <button @click="clearForm" class="text-xs text-blue-600 hover:underline">重置表单</button>
+                </div>
+                
+                <!-- Project Selector -->
+                <select v-model="currentProjectId" @change="onProjectSwitch" class="w-full border border-gray-300 rounded px-2 py-1 text-sm">
+                    <option value="" disabled>-- 选择项目 --</option>
+                    <option v-for="p in projects" :key="p.id" :value="p.id">{{ p.name }}</option>
+                </select>
+
+                <!-- Project Inputs -->
+                <div class="flex flex-col gap-2">
+                    <input v-model="projectForm.name" placeholder="项目名称" class="w-full border border-gray-300 rounded px-2 py-1 text-sm">
+                    
+                    <div class="flex gap-1">
+                        <input v-model="projectForm.image_dir" placeholder="图片文件夹路径" class="flex-1 border border-gray-300 rounded px-2 py-1 text-sm">
+                        <button @click="selectImageDir" class="bg-gray-200 hover:bg-gray-300 px-2 rounded text-xs" title="选择文件夹">📂</button>
+                    </div>
+
+                    <div class="flex gap-1">
+                        <input v-model="projectForm.jsonl_path" placeholder="输出 JSONL 文件夹" class="flex-1 border border-gray-300 rounded px-2 py-1 text-sm">
+                        <button @click="selectJsonlPath" class="bg-gray-200 hover:bg-gray-300 px-2 rounded text-xs" title="选择文件夹">📂</button>
+                    </div>
+                </div>
+
+                <!-- Actions -->
+                <div class="flex gap-2">
+                    <button @click="saveProject" class="flex-1 bg-indigo-600 text-white px-2 py-1 rounded text-sm hover:bg-indigo-700">保存/新建</button>
+                    <button @click="deleteProject" :disabled="!currentProjectId" class="flex-1 bg-red-500 text-white px-2 py-1 rounded text-sm hover:bg-red-600 disabled:opacity-50">删除</button>
+                </div>
+            </div>
+
+            <!-- Image List Header -->
+            <div class="p-2 bg-gray-100 border-b text-xs font-bold text-gray-500 flex justify-between items-center">
+                <span>图片列表 ({{ images.length }})</span>
+                <button @click="fetchImages" class="text-indigo-600 hover:text-indigo-800" title="刷新列表">↻</button>
+            </div>
+
+            <!-- Image List -->
+            <div class="flex-1 overflow-y-auto">
+                <div v-for="(img, index) in images" :key="img" 
+                     @click="selectImage(index)"
+                     class="p-2 cursor-pointer hover:bg-gray-100 text-sm truncate flex justify-between items-center"
+                     :class="{'bg-indigo-50 border-l-4 border-indigo-600': currentIndex === index, 'text-green-600': isLabeled(img)}">
+                    <span :title="img">{{ img }}</span>
+                    <span v-if="isLabeled(img)" class="text-xs">✓</span>
+                </div>
             </div>
         </div>
 
@@ -78,32 +108,58 @@
             
             <!-- Image View -->
             <div class="flex-1 flex flex-col min-w-0">
-                <div class="image-container flex-1 shadow-inner border border-gray-200 relative group">
+                <div class="image-container flex-1 shadow-inner border border-gray-200 relative group"
+                     ref="imageContainerRef"
+                     :class="rightMode === 'box' && boxCreateActive ? 'cursor-crosshair' : ''"
+                     @pointerdown="onImagePointerDown"
+                     @pointermove="onImagePointerMove"
+                     @pointerup="onImagePointerUp"
+                     @pointercancel="onImagePointerCancel"
+                     @pointerleave="onImagePointerLeave">
                     <img v-if="currentImageName" 
                          ref="imageRef"
                          :src="getImageUrl(currentImageName)" 
                          alt="Current Image"
-                         :style="imageStyle"
+                         draggable="false"
                          @load="onImageLoad"
-                         @wheel.prevent="onWheel"
-                         @dblclick="resetZoom"
-                         title="滚轮缩放，双击重置">
+                         @dragstart.prevent
+                         class="max-w-full max-h-full object-contain">
+                    <template v-if="currentImageName">
+                        <div v-for="(b, idx) in boxesForCurrentImage"
+                             :key="'fixed-' + idx"
+                             class="absolute border-2 pointer-events-none"
+                             :style="[
+                                 boxStyleFromImagePixels(b, 10),
+                                 { 
+                                     borderColor: getLabelColor(b.label),
+                                     backgroundColor: getLabelColor(b.label) + '20'
+                                 }
+                             ]">
+                            <!-- Corner points -->
+                            <div class="absolute w-1.5 h-1.5 rounded-full" :style="{ backgroundColor: getLabelColor(b.label), top: '-3px', left: '-3px' }"></div>
+                            <div class="absolute w-1.5 h-1.5 rounded-full" :style="{ backgroundColor: getLabelColor(b.label), top: '-3px', right: '-3px' }"></div>
+                            <div class="absolute w-1.5 h-1.5 rounded-full" :style="{ backgroundColor: getLabelColor(b.label), bottom: '-3px', left: '-3px' }"></div>
+                            <div class="absolute w-1.5 h-1.5 rounded-full" :style="{ backgroundColor: getLabelColor(b.label), bottom: '-3px', right: '-3px' }"></div>
+                        </div>
+                        <div v-if="drawing && currentBox"
+                             ref="drawingBoxRef"
+                             class="absolute border-2 pointer-events-none"
+                             :style="[
+                                 boxStyleFromImagePixels(currentBox, 20, true),
+                                 { 
+                                     borderColor: getLabelColor(currentBox.label),
+                                     backgroundColor: getLabelColor(currentBox.label) + '20'
+                                 }
+                             ]">
+                             <!-- Corner points -->
+                            <div class="absolute w-1.5 h-1.5 rounded-full" :style="{ backgroundColor: getLabelColor(currentBox.label), top: '-3px', left: '-3px' }"></div>
+                            <div class="absolute w-1.5 h-1.5 rounded-full" :style="{ backgroundColor: getLabelColor(currentBox.label), top: '-3px', right: '-3px' }"></div>
+                            <div class="absolute w-1.5 h-1.5 rounded-full" :style="{ backgroundColor: getLabelColor(currentBox.label), bottom: '-3px', left: '-3px' }"></div>
+                            <div class="absolute w-1.5 h-1.5 rounded-full" :style="{ backgroundColor: getLabelColor(currentBox.label), bottom: '-3px', right: '-3px' }"></div>
+                        </div>
+                    </template>
                     <div v-else class="text-gray-400 m-auto">暂无图片</div>
                     
-                    <!-- Zoom Controls (Modern Floating Bar) -->
-                    <div class="absolute bottom-6 left-1/2 transform -translate-x-1/2 flex items-center gap-1 bg-white/90 backdrop-blur-sm px-4 py-2 rounded-full shadow-xl border border-gray-200 z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                        <button @click="zoomOut" class="p-1.5 hover:bg-gray-100 rounded-full text-gray-700 transition-colors focus:outline-none" title="缩小">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-                        </button>
-                        <span class="text-xs font-mono font-medium text-gray-600 w-12 text-center select-none">{{ Math.round(scale * 100) }}%</span>
-                        <button @click="zoomIn" class="p-1.5 hover:bg-gray-100 rounded-full text-gray-700 transition-colors focus:outline-none" title="放大">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-                        </button>
-                        <div class="w-px h-4 bg-gray-300 mx-2"></div>
-                        <button @click="resetZoom" class="p-1.5 hover:bg-gray-100 rounded-full text-gray-700 transition-colors focus:outline-none" title="重置 (Fit)">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
-                        </button>
-                    </div>
                 </div>
                 <div class="mt-2 flex justify-between items-center">
                     <button @click="prevImage" :disabled="currentIndex <= 0" class="px-4 py-2 bg-gray-200 rounded disabled:opacity-50">← 上一张</button>
@@ -112,31 +168,139 @@
                 </div>
             </div>
 
-            <!-- Input Form -->
+            <!-- Right Panel: Modes -->
             <div class="w-full md:w-1/3 bg-white p-4 rounded shadow flex flex-col gap-4 overflow-y-auto">
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">User Input (用户指令)</label>
-                    <div class="relative">
-                        <textarea v-model="userContent" ref="userContentRef" rows="4" class="w-full border border-gray-300 rounded p-2 focus:ring-indigo-500 focus:border-indigo-500" placeholder="例如: 描述这张图片..."></textarea>
+                <div class="flex border-b mb-2">
+                    <button @click="rightMode = 'qa'" :class="['flex-1 py-2 text-sm font-medium', rightMode === 'qa' ? 'border-b-2 border-indigo-600 text-indigo-600' : 'text-gray-500']">
+                        问答标注
+                    </button>
+                    <button @click="rightMode = 'box'" :class="['flex-1 py-2 text-sm font-medium', rightMode === 'box' ? 'border-b-2 border-indigo-600 text-indigo-600' : 'text-gray-500']">
+                        框选标注
+                    </button>
+                </div>
+
+                <!-- QA Mode -->
+                <div v-if="rightMode === 'qa'" class="flex flex-col gap-4 flex-1">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">User Input (用户指令)</label>
+                        <div class="relative">
+                            <textarea v-model="userContent" ref="userContentRef" rows="4" class="w-full border border-gray-300 rounded p-2 focus:ring-indigo-500 focus:border-indigo-500" placeholder="例如: 描述这张图片..."></textarea>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Assistant Output (助手回答)</label>
+                        <textarea v-model="assistantContent" rows="6" class="w-full border border-gray-300 rounded p-2 focus:ring-indigo-500 focus:border-indigo-500" placeholder="模型预期的回答..."></textarea>
+                    </div>
+
+                    <div class="mt-auto pt-4 border-t flex flex-col gap-2">
+                        <div v-if="saveStatus" :class="{'text-green-600': saveStatus.type === 'success', 'text-red-600': saveStatus.type === 'error'}" class="text-sm text-center mb-2">
+                            {{ saveStatus.msg }}
+                        </div>
+                        <button @click="saveAndNext" class="w-full bg-indigo-600 text-white py-2 rounded font-bold hover:bg-indigo-700 transition flex justify-center items-center gap-2">
+                            <span>保存并下一张</span>
+                            <span class="text-xs font-normal opacity-75">(Ctrl + Enter)</span>
+                        </button>
+                        <button @click="nextImage" class="w-full bg-white border border-gray-300 text-gray-700 py-2 rounded hover:bg-gray-50">
+                            跳过 (不保存)
+                        </button>
                     </div>
                 </div>
 
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Assistant Output (助手回答)</label>
-                    <textarea v-model="assistantContent" rows="6" class="w-full border border-gray-300 rounded p-2 focus:ring-indigo-500 focus:border-indigo-500" placeholder="模型预期的回答..."></textarea>
-                </div>
-
-                <div class="mt-auto pt-4 border-t flex flex-col gap-2">
-                    <div v-if="saveStatus" :class="{'text-green-600': saveStatus.type === 'success', 'text-red-600': saveStatus.type === 'error'}" class="text-sm text-center mb-2">
-                        {{ saveStatus.msg }}
+                <!-- Box Mode -->
+                <div v-else class="flex flex-col gap-4 flex-1">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">当前模式: 框选标注</label>
+                        <p class="text-xs text-gray-500">
+                            先在右侧定义一组标签并选择当前标签，点击“创建Box”后，在图片上按住左键拖拽生成矩形框。
+                        </p>
                     </div>
-                    <button @click="saveAndNext" class="w-full bg-indigo-600 text-white py-2 rounded font-bold hover:bg-indigo-700 transition flex justify-center items-center gap-2">
-                        <span>保存并下一张</span>
-                        <span class="text-xs font-normal opacity-75">(Ctrl + Enter)</span>
-                    </button>
-                    <button @click="nextImage" class="w-full bg-white border border-gray-300 text-gray-700 py-2 rounded hover:bg-gray-50">
-                        跳过 (不保存)
-                    </button>
+
+                    <div class="flex flex-col gap-3">
+                        <div class="flex items-center gap-2 p-1.5 bg-gray-50 rounded-lg border border-gray-200 shadow-sm transition-colors focus-within:border-indigo-300 focus-within:ring-2 focus-within:ring-indigo-100">
+                            <div class="text-gray-400 pl-2">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+                                </svg>
+                            </div>
+                            <input v-model="labelInput" @keyup.enter="addLabel" placeholder="输入新标签按Enter添加..." class="flex-1 bg-transparent border-none focus:ring-0 text-sm px-2 py-1 outline-none">
+                            <button @click="addLabel" class="p-1.5 bg-white text-indigo-600 border border-gray-200 rounded-md hover:bg-indigo-50 hover:border-indigo-200 transition shadow-sm" title="添加标签">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                                </svg>
+                            </button>
+                        </div>
+                        <div class="flex flex-wrap gap-2">
+                            <button
+                                v-for="(name, idx) in labelList"
+                                :key="name"
+                                @click="selectLabel(name)"
+                                class="group relative px-3 py-1.5 text-xs font-medium rounded-lg border transition-all duration-200 flex items-center gap-2 shadow-sm hover:shadow"
+                                :style="{
+                                    backgroundColor: currentBoxLabel === name ? getLabelColor(name) : 'white',
+                                    borderColor: currentBoxLabel === name ? getLabelColor(name) : '#e5e7eb',
+                                    color: currentBoxLabel === name ? 'white' : '#374151'
+                                }"
+                            >
+                                <span v-if="idx < 10" class="flex items-center justify-center w-4 h-4 rounded-full text-[10px] font-mono" :class="currentBoxLabel === name ? 'bg-black/20 text-white' : 'bg-gray-100 text-gray-500'">
+                                    {{ idx === 9 ? 0 : idx + 1 }}
+                                </span>
+                                {{ name }}
+                            </button>
+                        </div>
+                        <div class="flex items-center justify-between text-xs text-gray-500">
+                            <span>当前标签:
+                                <span class="font-medium text-indigo-600">
+                                    {{ currentBoxLabel || '未选择' }}
+                                </span>
+                            </span>
+                            <button @click="clearBoxes" class="px-3 py-1 text-xs border border-gray-300 rounded text-gray-600 hover:bg-gray-50">
+                                清空本图框
+                            </button>
+                        </div>
+                        <div class="flex gap-2">
+                            <button
+                                @click="toggleBoxCreate"
+                                :disabled="!currentImageName"
+                                class="flex-1 px-4 py-2.5 text-sm rounded-lg font-medium transition-all shadow-sm disabled:opacity-50 flex justify-center items-center gap-2"
+                                :class="boxCreateActive 
+                                    ? 'bg-indigo-600 text-white ring-2 ring-indigo-300 ring-offset-1' 
+                                    : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-indigo-300 hover:text-indigo-600'"
+                            >
+                                <svg v-if="!boxCreateActive" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                </svg>
+                                <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                </svg>
+                                {{ boxCreateActive ? '正在绘制... (ESC取消)' : '开始创建 Box' }}
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="flex-1 overflow-y-auto border border-gray-200 rounded p-2">
+                        <div v-if="boxesForCurrentImage.length === 0" class="text-xs text-gray-400">
+                            当前图片暂无框标注。请在图片上拖动绘制。
+                        </div>
+                        <div v-for="(b, idx) in boxesForCurrentImage" :key="idx" class="flex items-center justify-between text-xs py-1 border-b last:border-b-0">
+                            <div class="flex-1 truncate">
+                                <span class="font-medium text-indigo-600">{{ b.label || '(未命名)' }}</span>
+                                <span class="text-gray-500 ml-1">
+                                    [{{ Math.round(b.x1) }}, {{ Math.round(b.y1) }}] - [{{ Math.round(b.x2) }}, {{ Math.round(b.y2) }}]
+                                </span>
+                            </div>
+                            <button @click="removeBox(idx)" class="text-red-500 hover:text-red-700 ml-2">删除</button>
+                        </div>
+                    </div>
+
+                    <div class="pt-4 border-t flex flex-col gap-2">
+                        <div v-if="boxSaveStatus" :class="{'text-green-600': boxSaveStatus.type === 'success', 'text-red-600': boxSaveStatus.type === 'error'}" class="text-sm text-center mb-2">
+                            {{ boxSaveStatus.msg }}
+                        </div>
+                        <button @click="saveBoxes" class="w-full bg-indigo-600 text-white py-2 rounded font-bold hover:bg-indigo-700 transition">
+                            保存当前图片框标注
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -144,23 +308,69 @@
 </div>
 
 <script>
-const { createApp, ref, computed, onMounted, watch } = Vue;
+const { createApp, ref, computed, onMounted, onUnmounted, watch, nextTick } = Vue;
 
 createApp({
     setup() {
-        const config = ref({ image_dir: '', jsonl_path: '' });
-        const showConfig = ref(false);
+        const projects = ref([]);
+        const currentProjectId = ref('');
+        const projectForm = ref({ id: '', name: '', image_dir: '', jsonl_path: '' });
+        
         const images = ref([]);
         const labeledSet = ref(new Set());
         const currentIndex = ref(0);
-        const scale = ref(1);
         const imageRef = ref(null);
-        const baseSize = ref({ w: 0, h: 0 });
+        const imageContainerRef = ref(null);
+        const drawingBoxRef = ref(null);
         
         const userContent = ref('详细描述这张图片。');
         const assistantContent = ref('');
         const saveStatus = ref(null);
         const userContentRef = ref(null);
+
+        const rightMode = ref('box');
+
+        const boxes = ref({});
+        const drawing = ref(false);
+        const startPoint = ref({ x: 0, y: 0 });
+        const currentBox = ref(null);
+        let tempBox = null; // Non-reactive for performance
+
+        const currentBoxLabel = ref('');
+        const boxSaveStatus = ref(null);
+        const labelInput = ref('');
+        const labelList = ref([]);
+        const boxCreateActive = ref(false);
+        const activePointerId = ref(null);
+        const layoutVersion = ref(0);
+
+        const labelColors = [
+            '#ef4444', // red
+            '#f97316', // orange
+            '#f59e0b', // amber
+            '#84cc16', // lime
+            '#10b981', // emerald
+            '#06b6d4', // cyan
+            '#3b82f6', // blue
+            '#6366f1', // indigo
+            '#a855f7', // purple
+            '#ec4899', // pink
+        ];
+
+        const getLabelColor = (label) => {
+            if (!label) return '#9ca3af'; // gray-400
+            const idx = labelList.value.indexOf(label);
+            if (idx !== -1) {
+                return labelColors[idx % labelColors.length];
+            }
+            // Hash for unknown labels
+            let hash = 0;
+            for (let i = 0; i < label.length; i++) {
+                hash = label.charCodeAt(i) + ((hash << 5) - hash);
+            }
+            const c = (hash & 0x00ffffff).toString(16).toUpperCase();
+            return '#' + '00000'.substring(0, 6 - c.length) + c;
+        };
 
         const currentImageName = computed(() => {
             if (images.value.length > 0 && currentIndex.value >= 0 && currentIndex.value < images.value.length) {
@@ -169,37 +379,16 @@ createApp({
             return null;
         });
 
+        const boxesForCurrentImage = computed(() => {
+            if (!currentImageName.value) return [];
+            return boxes.value[currentImageName.value] || [];
+        });
+
         const labeledCount = computed(() => labeledSet.value.size);
         const totalImages = computed(() => images.value.length);
 
         const getImageUrl = (name) => `./api/image_file/${encodeURIComponent(name)}`;
         const isLabeled = (name) => labeledSet.value.has(name);
-
-        const fetchConfig = async () => {
-            try {
-                const res = await fetch('./api/config');
-                config.value = await res.json();
-                await fetchImages();
-            } catch (e) {
-                console.error(e);
-            }
-        };
-
-        const saveConfig = async () => {
-            try {
-                const res = await fetch('./api/config', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(config.value)
-                });
-                if (res.ok) {
-                    showConfig.value = false;
-                    await fetchImages();
-                }
-            } catch (e) {
-                alert('保存配置失败');
-            }
-        };
 
         const fetchImages = async () => {
             try {
@@ -212,6 +401,97 @@ createApp({
                 const firstUnlabeled = images.value.findIndex(img => !labeledSet.value.has(img));
                 if (firstUnlabeled !== -1) {
                     currentIndex.value = firstUnlabeled;
+                } else {
+                    currentIndex.value = 0;
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        };
+
+        const fetchProjects = async () => {
+            try {
+                const res = await fetch('./api/projects');
+                projects.value = await res.json();
+            } catch(e) { console.error(e); }
+        };
+
+        const onProjectSwitch = async () => {
+             const pid = currentProjectId.value;
+             if(!pid) return;
+             const p = projects.value.find(x => x.id === pid);
+             if(p) {
+                 projectForm.value = { ...p };
+                 await fetch(`./api/projects/switch/${pid}`, { method: 'POST' });
+                 await fetchImages();
+             }
+        };
+
+        const saveProject = async () => {
+            if(!projectForm.value.name || !projectForm.value.image_dir || !projectForm.value.jsonl_path) {
+                alert("请填写完整项目信息");
+                return;
+            }
+            try {
+                const res = await fetch('./api/projects', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(projectForm.value)
+                });
+                if(res.ok) {
+                    const newProject = await res.json();
+                    await fetchProjects();
+                    currentProjectId.value = newProject.id;
+                    projectForm.value = { ...newProject };
+                    await fetchImages();
+                } else {
+                    const err = await res.json();
+                    alert(err.detail || "保存失败");
+                }
+            } catch(e) {
+                alert("保存失败");
+            }
+        };
+
+        const deleteProject = async () => {
+            if(!currentProjectId.value) return;
+            if(!confirm("确定要删除该项目吗？")) return;
+            try {
+                await fetch(`./api/projects/${currentProjectId.value}`, { method: 'DELETE' });
+                projectForm.value = { id: '', name: '', image_dir: '', jsonl_path: '' };
+                currentProjectId.value = '';
+                images.value = [];
+                labeledSet.value = new Set();
+                await fetchProjects();
+            } catch(e) {
+                alert("删除失败");
+            }
+        };
+        
+        const clearForm = () => {
+            projectForm.value = { id: '', name: '', image_dir: '', jsonl_path: '' };
+            currentProjectId.value = '';
+            images.value = [];
+        };
+
+        const selectImageDir = async () => {
+            try {
+                const res = await fetch('./api/utils/select_folder');
+                const data = await res.json();
+                if (data.path) {
+                    projectForm.value.image_dir = data.path;
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        };
+
+        const selectJsonlPath = async () => {
+            try {
+                const res = await fetch('./api/utils/select_file_save');
+                const data = await res.json();
+                if (data.path) {
+                    projectForm.value.jsonl_path = data.path;
                 }
             } catch (e) {
                 console.error(e);
@@ -220,9 +500,11 @@ createApp({
 
         const selectImage = (index) => {
             currentIndex.value = index;
-            scale.value = 1;
             assistantContent.value = '';
             saveStatus.value = null;
+            drawing.value = false;
+            currentBox.value = null;
+            activePointerId.value = null;
         };
 
         const prevImage = () => {
@@ -234,52 +516,233 @@ createApp({
         };
 
         const onImageLoad = () => {
-            scale.value = 1;
+            layoutVersion.value = layoutVersion.value + 1;
         };
 
-        const updateBaseSize = () => {
-            if (imageRef.value && scale.value === 1) {
-                baseSize.value = {
-                    w: imageRef.value.offsetWidth,
-                    h: imageRef.value.offsetHeight
-                };
+        const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
+
+        const getImageMetrics = () => {
+            layoutVersion.value;
+            const containerEl = imageContainerRef.value;
+            const imgEl = imageRef.value;
+            if (!containerEl || !imgEl) return null;
+
+            const containerRect = containerEl.getBoundingClientRect();
+            const imgRect = imgEl.getBoundingClientRect();
+
+            if (imgRect.width <= 0 || imgRect.height <= 0) return null;
+            if (!Number.isFinite(imgEl.naturalWidth) || !Number.isFinite(imgEl.naturalHeight)) return null;
+            if (imgEl.naturalWidth <= 0 || imgEl.naturalHeight <= 0) return null;
+
+            return {
+                containerRect,
+                imgRect,
+                naturalWidth: imgEl.naturalWidth,
+                naturalHeight: imgEl.naturalHeight
+            };
+        };
+
+        const pointerEventToImagePixels = (e, opts = {}) => {
+            const metrics = getImageMetrics();
+            if (!metrics) return null;
+            const { imgRect, naturalWidth, naturalHeight } = metrics;
+
+            const inside =
+                e.clientX >= imgRect.left &&
+                e.clientX <= imgRect.right &&
+                e.clientY >= imgRect.top &&
+                e.clientY <= imgRect.bottom;
+
+            if (opts.requireInside && !inside) return null;
+
+            const xClampedClient = clamp(e.clientX, imgRect.left, imgRect.right);
+            const yClampedClient = clamp(e.clientY, imgRect.top, imgRect.bottom);
+
+            const xOnDisplayed = xClampedClient - imgRect.left;
+            const yOnDisplayed = yClampedClient - imgRect.top;
+
+            const x = (xOnDisplayed * naturalWidth) / imgRect.width;
+            const y = (yOnDisplayed * naturalHeight) / imgRect.height;
+
+            return {
+                x: clamp(x, 0, naturalWidth),
+                y: clamp(y, 0, naturalHeight)
+            };
+        };
+
+        const boxStyleFromImagePixels = (box, zIndex, useMinSize = false) => {
+            const metrics = getImageMetrics();
+            if (!metrics) return { display: 'none' };
+
+            const { containerRect, imgRect, naturalWidth, naturalHeight } = metrics;
+
+            const leftOnImg = Math.min(box.x1, box.x2);
+            const topOnImg = Math.min(box.y1, box.y2);
+            const widthOnImg = Math.abs(box.x2 - box.x1);
+            const heightOnImg = Math.abs(box.y2 - box.y1);
+
+            const offsetX = imgRect.left - containerRect.left;
+            const offsetY = imgRect.top - containerRect.top;
+            const scaleX = imgRect.width / naturalWidth;
+            const scaleY = imgRect.height / naturalHeight;
+
+            const left = offsetX + leftOnImg * scaleX;
+            const top = offsetY + topOnImg * scaleY;
+            const width = widthOnImg * scaleX;
+            const height = heightOnImg * scaleY;
+
+            return {
+                zIndex,
+                left: left + 'px',
+                top: top + 'px',
+                width: (useMinSize ? Math.max(1, width) : width) + 'px',
+                height: (useMinSize ? Math.max(1, height) : height) + 'px'
+            };
+        };
+
+        const onImagePointerDown = async (e) => {
+            if (rightMode.value !== 'box') return;
+            if (!boxCreateActive.value) return;
+            if (e.pointerType === 'mouse' && e.button !== 0) return;
+            if (!currentImageName.value) return;
+            if (!currentBoxLabel.value) {
+                boxSaveStatus.value = { type: 'error', msg: '请先选择一个标签，再创建Box' };
+                return;
+            }
+            if (!imageContainerRef.value) return;
+            if (!imageRef.value) return;
+            e.preventDefault();
+
+            const pos = pointerEventToImagePixels(e, { requireInside: true });
+            if (!pos) return;
+            if (drawing.value) return;
+
+            boxSaveStatus.value = null;
+            drawing.value = true;
+            activePointerId.value = e.pointerId;
+            startPoint.value = pos;
+            
+            const initBox = { x1: pos.x, y1: pos.y, x2: pos.x, y2: pos.y, label: currentBoxLabel.value };
+            currentBox.value = initBox;
+            tempBox = { ...initBox };
+
+            imageContainerRef.value.setPointerCapture(e.pointerId);
+            
+            await nextTick();
+            if (drawingBoxRef.value) {
+                const style = boxStyleFromImagePixels(tempBox, 20, true);
+                Object.assign(drawingBoxRef.value.style, style);
             }
         };
 
-        const imageStyle = computed(() => {
-            if (scale.value === 1) {
-                return { maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' };
-            } else {
-                return {
-                    width: (baseSize.value.w * scale.value) + 'px',
-                    height: (baseSize.value.h * scale.value) + 'px',
-                    maxWidth: 'none',
-                    maxHeight: 'none',
-                    objectFit: 'fill'
-                };
+        const onImagePointerMove = (e) => {
+            if (!drawing.value) return;
+            if (activePointerId.value !== null && e.pointerId !== activePointerId.value) return;
+            const pos = pointerEventToImagePixels(e);
+            if (!pos) return;
+            
+            if (tempBox) {
+                tempBox.x2 = pos.x;
+                tempBox.y2 = pos.y;
+                
+                if (drawingBoxRef.value) {
+                    const style = boxStyleFromImagePixels(tempBox, 20, true);
+                    Object.assign(drawingBoxRef.value.style, style);
+                }
             }
-        });
+        };
 
-        const zoomIn = () => {
-            updateBaseSize();
-            scale.value = Math.min(scale.value * 1.2, 10);
+        const finishDrawing = () => {
+            if (!drawing.value || !tempBox || !currentImageName.value) {
+                drawing.value = false;
+                currentBox.value = null;
+                tempBox = null;
+                activePointerId.value = null;
+                return;
+            }
+            const box = tempBox;
+            if (Math.abs(box.x2 - box.x1) < 3 || Math.abs(box.y2 - box.y1) < 3) {
+                drawing.value = false;
+                currentBox.value = null;
+                tempBox = null;
+                activePointerId.value = null;
+                return;
+            }
+            const img = currentImageName.value;
+            const list = boxes.value[img] ? [...boxes.value[img]] : [];
+            list.push({ x1: box.x1, y1: box.y1, x2: box.x2, y2: box.y2, label: box.label });
+            boxes.value = { ...boxes.value, [img]: list };
+            drawing.value = false;
+            currentBox.value = null;
+            tempBox = null;
+            activePointerId.value = null;
         };
-        const zoomOut = () => {
-            if (scale.value <= 1) return;
-            let newScale = scale.value / 1.2;
-            if (newScale < 1.1) newScale = 1;
-            scale.value = newScale;
+
+        const onImagePointerUp = (e) => {
+            if (!drawing.value) return;
+            if (activePointerId.value !== null && e.pointerId !== activePointerId.value) return;
+            
+            const pos = pointerEventToImagePixels(e);
+            if (pos && tempBox) {
+                tempBox.x2 = pos.x;
+                tempBox.y2 = pos.y;
+            }
+
+            if (imageContainerRef.value && activePointerId.value !== null) {
+                try { imageContainerRef.value.releasePointerCapture(activePointerId.value); } catch {}
+            }
+            finishDrawing();
         };
-        const resetZoom = () => {
-            scale.value = 1;
+
+        const onImagePointerCancel = (e) => {
+            if (!drawing.value) return;
+            if (activePointerId.value !== null && e.pointerId !== activePointerId.value) return;
+            if (imageContainerRef.value && activePointerId.value !== null) {
+                try { imageContainerRef.value.releasePointerCapture(activePointerId.value); } catch {}
+            }
+            drawing.value = false;
+            currentBox.value = null;
+            tempBox = null;
+            activePointerId.value = null;
         };
-        const onWheel = (e) => {
-            updateBaseSize();
-            const delta = e.deltaY;
-            if (delta > 0) {
-                zoomOut();
-            } else {
-                zoomIn();
+
+        const onImagePointerLeave = () => {
+            return;
+        };
+
+        const clearBoxes = () => {
+            if (!currentImageName.value) return;
+            boxes.value = { ...boxes.value, [currentImageName.value]: [] };
+        };
+
+        const removeBox = (idx) => {
+            if (!currentImageName.value) return;
+            const list = boxesForCurrentImage.value.slice();
+            if (idx < 0 || idx >= list.length) return;
+            list.splice(idx, 1);
+            boxes.value = { ...boxes.value, [currentImageName.value]: list };
+        };
+
+        const addLabel = () => {
+            const name = labelInput.value.trim();
+            if (!name) return;
+            if (!labelList.value.includes(name)) {
+                labelList.value.push(name);
+            }
+            labelInput.value = '';
+            currentBoxLabel.value = name;
+        };
+
+        const selectLabel = (name) => {
+            currentBoxLabel.value = name;
+        };
+
+        const toggleBoxCreate = () => {
+            boxCreateActive.value = !boxCreateActive.value;
+            if (!boxCreateActive.value) {
+                drawing.value = false;
+                currentBox.value = null;
+                activePointerId.value = null;
             }
         };
 
@@ -354,32 +817,92 @@ createApp({
                     case 'd':
                         nextImage();
                         break;
-                    case 'w': // Optional: Zoom In
-                        zoomIn();
-                        break;
-                    case 's': // Optional: Zoom Out
-                        zoomOut();
-                        break;
-                    case 'r': // Optional: Reset Zoom
-                        resetZoom();
-                        break;
+                }
+                
+                // Shortcut for labels (1-9, 0)
+                if (/^[0-9]$/.test(e.key)) {
+                    const num = parseInt(e.key);
+                    const idx = num === 0 ? 9 : num - 1;
+                    if (idx < labelList.value.length) {
+                        const label = labelList.value[idx];
+                        currentBoxLabel.value = label;
+                        // Auto activate box creation
+                        if (!boxCreateActive.value) {
+                            toggleBoxCreate();
+                        }
+                        boxSaveStatus.value = { type: 'success', msg: `已选中标签: ${label} (快捷键 ${num})` };
+                        setTimeout(() => { 
+                            if(boxSaveStatus.value && boxSaveStatus.value.msg.includes(label)) 
+                                boxSaveStatus.value = null; 
+                        }, 1500);
+                    }
                 }
             }
         };
 
-        onMounted(() => {
-            fetchConfig();
+        const saveBoxes = async () => {
+            if (!currentImageName.value) return;
+            const list = boxesForCurrentImage.value;
+            if (!list || list.length === 0) {
+                boxSaveStatus.value = { type: 'error', msg: '当前图片没有框可以保存' };
+                return;
+            }
+            try {
+                const res = await fetch('./api/save_boxes', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        image: currentImageName.value,
+                        boxes: list
+                    })
+                });
+                if (res.ok) {
+                    boxSaveStatus.value = { type: 'success', msg: '框标注已保存' };
+                    setTimeout(() => {
+                        boxSaveStatus.value = null;
+                    }, 800);
+                } else {
+                    const err = await res.json();
+                    boxSaveStatus.value = { type: 'error', msg: err.detail || '保存失败' };
+                }
+            } catch (e) {
+                boxSaveStatus.value = { type: 'error', msg: '保存失败: ' + e.message };
+            }
+        };
+
+        onMounted(async () => {
+            await fetchProjects();
+            if (projects.value.length > 0) {
+                currentProjectId.value = projects.value[0].id;
+                await onProjectSwitch();
+            }
             window.addEventListener('keydown', handleKeydown);
+            window.addEventListener('resize', onImageLoad);
+        });
+
+        onUnmounted(() => {
+            window.removeEventListener('keydown', handleKeydown);
+            window.removeEventListener('resize', onImageLoad);
         });
 
         return {
-            config, showConfig, images, currentIndex, 
+            projects, currentProjectId, projectForm, 
+            saveProject, deleteProject, onProjectSwitch, clearForm, fetchImages,
+            selectImageDir, selectJsonlPath,
+            images, currentIndex, 
             userContent, assistantContent, saveStatus, userContentRef,
             currentImageName, labeledCount, totalImages,
-            getImageUrl, isLabeled, saveConfig, selectImage, 
+            getImageUrl, isLabeled, selectImage, 
             prevImage, nextImage, insertTag, saveAndNext,
-            scale, zoomIn, zoomOut, resetZoom, onWheel,
-            imageRef, onImageLoad, imageStyle
+            imageRef, imageContainerRef, drawingBoxRef, onImageLoad,
+            rightMode,
+            labelInput, labelList, currentBoxLabel, boxesForCurrentImage, boxSaveStatus,
+            boxes, drawing, currentBox,
+            clearBoxes, removeBox, addLabel, selectLabel, saveBoxes,
+            boxCreateActive, toggleBoxCreate,
+            boxStyleFromImagePixels,
+            getLabelColor,
+            onImagePointerDown, onImagePointerMove, onImagePointerUp, onImagePointerCancel, onImagePointerLeave
         };
     }
 }).mount('#app');

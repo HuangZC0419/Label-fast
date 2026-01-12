@@ -6,7 +6,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from fastapi import FastAPI, HTTPException, Body, Response, Query
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
-from annotation2.services import export_service, sync_service, record_service
+from annotation2.services import export_service, sync_service, record_service, project_service
 from Minimind_trianer.label_system.app import app as minimind_app
 from typing import Dict, Any, List, Optional
 
@@ -36,6 +36,14 @@ async def favicon():
 def health_check():
     return {"status": "ok"}
 
+@app.get("/api/projects")
+def list_projects_api():
+    try:
+        projects = project_service.list_projects()
+        return [{"id": p.id, "name": p.name} for p in projects]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/api/projects/id-by-name/{name}")
 def get_project_id(name: str):
     pid = sync_service.get_project_id_by_name(name)
@@ -55,6 +63,16 @@ def create_project_api(data: Dict[str, Any] = Body(...)):
             relation_types=data.get("relation_types", [])
         )
         return {"id": pid, "name": name}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/projects/{project_id}")
+def delete_project_api(project_id: int):
+    try:
+        success = project_service.delete_project(project_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Project not found or failed to delete")
+        return {"status": "ok"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

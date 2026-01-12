@@ -5,9 +5,15 @@
 4 silly config load:file:H:\Git\Annotation2\annotation2-ui\.npmrc
 5 silly config load:file:C:\Users\11597\.npmrc
 6 silly config load:file:C:\Users\11597\AppData\Roaming\npm\etc\npmrc
-7 verbose title npm run dev
-8 verbose argv "run" "dev"
-9 verbose logfile logs-max:10 dir:H:\Git\Annotation2\annotation2-ui\.npm-cache\_logs\2025-12-10T01_59_54_637Z-
-10 verbose logfile H:\Git\Annotation2\annotation2-ui\.npm-cache\_logs\2025-12-10T01_59_54_637Z-debug-0.log
+7 verbose title npm run build
+8 verbose argv "run" "build"
+9 verbose logfile logs-max:10 dir:H:\Git\Annotation2\annotation2-ui\.npm-cache\_logs\2026-01-07T07_47_22_026Z-
+10 verbose logfile H:\Git\Annotation2\annotation2-ui\.npm-cache\_logs\2026-01-07T07_47_22_026Z-debug-0.log
 11 silly logfile start cleaning logs, removing 1 files
 12 silly logfile done cleaning log files
+13 verbose cwd H:\Git\Annotation2\annotation2-ui
+14 verbose os Windows_NT 10.0.26100
+15 verbose node v22.15.0
+16 verbose npm  v10.9.2
+17 verbose exit 0
+18 info ok
