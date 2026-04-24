@@ -1,0 +1,22 @@
+# 当前目录结构
+# frontend: 前端界面
+# backend: 后端服务，已合并图像标注模块
+
+# 1. 进入 backend 目录
+cd h:\Git\Label-fast-main\backend
+
+# 2. 安装依赖 (建议使用虚拟环境)
+pip install -r requirements.txt
+
+# 3. 启动后端
+python server.py
+
+
+# 4. 进入 frontend 目录
+cd h:\Git\Label-fast-main\frontend
+
+# 5. 安装依赖 (如果第一次运行)
+npm install
+
+# 6. 启动开发服务器
+npm run dev
