@@ -1,8 +1,8 @@
 [
   {
     "id": "9eee1b1c-b281-4a43-9191-c7f32cbf78a5",
-    "name": "1",
-    "image_dir": "H:/Git/Label-fast-main/backend/图像标注器/pretrain_images",
-    "jsonl_path": "H:/Git/Label-fast-main/backend/图像标注器/pretrain_images/2.jsonl"
+    "name": "demo",
+    "image_dir": "/app/backend/图像标注器/待标注图像文件夹",
+    "jsonl_path": "/app/backend/图像标注器/标注后图像保存文件夹"
   }
 ]

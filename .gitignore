@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# Frontend
+node_modules/
+frontend/.npm-cache/
+
+# Docker
+*.tar
+
+# Environment
+.env
+
+# IDE
+.superpowers/
+.trae/

@@ -27,9 +27,9 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(BASE_DIR)
 PROJECTS_FILE = os.path.join(PROJECT_ROOT, "projects.json")
 
-DEFAULT_IMAGE_DIR = os.path.join(PROJECT_ROOT, "pretrain_images")
-DEFAULT_JSONL_PATH = os.path.join(PROJECT_ROOT, "pretrain_data.jsonl")
-DEFAULT_JSONL_FILENAME = "pretrain_data.jsonl"
+DEFAULT_IMAGE_DIR = os.path.join(PROJECT_ROOT, "待标注图像文件夹")
+DEFAULT_JSONL_PATH = os.path.join(PROJECT_ROOT, "标注后图像保存文件夹")
+DEFAULT_JSONL_FILENAME = "标注结果.jsonl"
 
 def run_dialog_script(script_code):
     """Run a python script in a subprocess to open a dialog"""
@@ -45,15 +45,44 @@ def run_dialog_script(script_code):
 
 @app.get("/api/utils/select_folder")
 async def select_folder():
-    script = "import tkinter as tk; from tkinter import filedialog; root=tk.Tk(); root.withdraw(); root.attributes('-topmost', True); print(filedialog.askdirectory()); root.destroy()"
-    path = run_dialog_script(script)
+    """Web 版文件夹选择器（替代 tkinter，适用于 Docker 环境）"""
+    path = os.path.abspath(PROJECT_ROOT)
     return {"path": path}
 
 @app.get("/api/utils/select_file_save")
 async def select_file_save():
-    script = "import tkinter as tk; from tkinter import filedialog; root=tk.Tk(); root.withdraw(); root.attributes('-topmost', True); print(filedialog.askdirectory()); root.destroy()"
-    path = run_dialog_script(script)
+    """Web 版文件夹选择器（替代 tkinter，适用于 Docker 环境）"""
+    path = os.path.abspath(PROJECT_ROOT)
     return {"path": path}
+
+@app.get("/api/utils/browse")
+async def browse_directory(path: str = "/"):
+    """浏览服务器目录结构，返回子目录和文件列表"""
+    try:
+        target = os.path.abspath(path)
+        if not os.path.exists(target):
+            target = os.path.abspath(PROJECT_ROOT)
+        if not os.path.isdir(target):
+            target = os.path.dirname(target)
+
+        parent = os.path.dirname(target) if target != "/" else "/"
+
+        items = []
+        for name in sorted(os.listdir(target)):
+            full = os.path.join(target, name)
+            items.append({
+                "name": name,
+                "path": full,
+                "is_dir": os.path.isdir(full),
+            })
+
+        return {
+            "current": target,
+            "parent": parent,
+            "items": items,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 class Config(BaseModel):
     image_dir: str
@@ -178,8 +207,10 @@ async def list_images():
         images = [f for f in files if f.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.gif', '.webp'))]
         images.sort()
         
-        # Check labeled images
+        # Check labeled images (from both LLM and box annotations)
         labeled = set()
+
+        # 1. LLM text annotations
         jsonl_path = resolve_jsonl_path(current_config.jsonl_path)
         if os.path.exists(jsonl_path):
             with open(jsonl_path, 'r', encoding='utf-8') as f:
@@ -192,7 +223,21 @@ async def list_images():
                             labeled.add(data["image"])
                     except:
                         pass
-        
+
+        # 2. Box annotations
+        boxes_path = get_boxes_path()
+        if os.path.exists(boxes_path):
+            with open(boxes_path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if not line: continue
+                    try:
+                        data = json.loads(line)
+                        if "image" in data:
+                            labeled.add(data["image"])
+                    except:
+                        pass
+
         return {"images": images, "labeled": list(labeled)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

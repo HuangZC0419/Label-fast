@@ -1,0 +1,15 @@
+.git
+.superpowers
+.trae
+docs
+frontend/node_modules
+frontend/.npm-cache
+frontend/dist
+backend/__pycache__
+backend/.pytest_cache
+*.pyc
+*.pyo
+*.log
+Dockerfile
+docker-compose.yml
+docker-compose.offline.yml

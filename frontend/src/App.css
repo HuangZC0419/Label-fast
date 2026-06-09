@@ -597,3 +597,166 @@ color:var(--text-secondary)}
 }
 
 
+/* ==================== 登录页面样式 ==================== */
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: #fafafa;
+}
+
+.login-card {
+  width: 360px;
+  background: #fff;
+  border: 1px solid #e8e8e8;
+  border-radius: 14px;
+  padding: 44px 36px;
+  box-shadow: 0 2px 16px rgba(0,0,0,0.06);
+}
+
+.login-card-header {
+  text-align: center;
+  margin-bottom: 32px;
+}
+
+.login-card-icon {
+  font-size: 32px;
+  margin-bottom: 8px;
+}
+
+.login-card-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #1a1a1a;
+  margin: 0 0 4px;
+}
+
+.login-card-subtitle {
+  font-size: 12px;
+  color: #999;
+  margin: 0;
+}
+
+.login-field {
+  margin-bottom: 16px;
+}
+
+.login-field-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: #444;
+  margin-bottom: 6px;
+}
+
+.login-input {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  font-size: 13px;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.2s ease;
+  font-family: var(--font-sans);
+}
+
+.login-input:focus {
+  border-color: #333;
+}
+
+.login-submit-btn {
+  width: 100%;
+  padding: 11px 0;
+  background: #1a1a1a;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s ease;
+  font-family: var(--font-sans);
+}
+
+.login-submit-btn:hover:not(:disabled) {
+  background: #333;
+}
+
+.login-submit-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.login-switch {
+  text-align: center;
+  margin-top: 18px;
+  font-size: 12px;
+  color: #999;
+}
+
+.login-switch-link {
+  color: #1a1a1a;
+  font-weight: 600;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 12px;
+}
+
+.login-switch-link:hover {
+  text-decoration: underline;
+}
+
+.login-error {
+  background: #fff0f0;
+  border: 1px solid #ffcccc;
+  color: #c00;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  margin-bottom: 16px;
+}
+
+.login-form-area {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.login-form-area.fade {
+  opacity: 0;
+  transform: translateY(4px);
+}
+
+/* ==================== 用户信息区域 ==================== */
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+  color: #666;
+}
+
+.user-info .username {
+  font-weight: 500;
+  color: #333;
+}
+
+.user-info .logout-btn {
+  background: none;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 4px 12px;
+  font-size: 12px;
+  color: #666;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.user-info .logout-btn:hover {
+  border-color: #c00;
+  color: #c00;
+}
+
