@@ -17,7 +17,7 @@ const AuthContext = createContext<AuthContextType | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
-  const [token, setToken] = useState<string | null>(localStorage.getItem('token'))
+  const [token, setToken] = useState<string | null>(sessionStorage.getItem('token'))
   const [loading, setLoading] = useState(true)
 
   // 初始化：如果有 token，验证它是否有效
@@ -32,7 +32,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const data = await res.json()
           setUser(data)
         } else {
-          localStorage.removeItem('token')
+          sessionStorage.removeItem('token')
           setToken(null)
         }
       } catch {
@@ -54,13 +54,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw new Error(err.detail || '登录失败')
     }
     const data = await res.json()
-    localStorage.setItem('token', data.token)
+    sessionStorage.setItem('token', data.token)
     setToken(data.token)
     setUser(data.user)
   }
 
   const logout = () => {
-    localStorage.removeItem('token')
+    sessionStorage.removeItem('token')
     setToken(null)
     setUser(null)
   }

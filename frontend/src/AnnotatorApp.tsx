@@ -554,36 +554,74 @@ export default function AnnotatorApp() {
       setHistory(arr)
     }
   }
+
+  // 使用 ref 存储键盘事件处理所需的函数引用，避免 useEffect 依赖数组膨胀
+  // 导致每次状态变化都重新绑定事件监听器（严重性能问题）
+  // 注意：必须同时存储函数引用，因为 removeSpanById/prevItem/nextItem/addSpan/addRelation
+  // 每次渲染都会重新创建（无 useCallback），它们的闭包捕获了当次渲染的状态。
+  // useEffect([]) 中只能拿到首次渲染的闭包，必须通过 ref 访问最新版本。
+  const keyStateRef = useRef({
+    labelPickerOpen, pending, relPickerOpen, pendingRel,
+    labels, relationTypes, selectedSpanId,
+  })
+  keyStateRef.current = {
+    labelPickerOpen, pending, relPickerOpen, pendingRel,
+    labels, relationTypes, selectedSpanId,
+  }
+
+  // 存储所有快捷键调用的函数引用，确保始终拿到最新闭包
+  const removeSpanByIdRef = useRef(removeSpanById)
+  removeSpanByIdRef.current = removeSpanById
+  const prevItemRef = useRef(prevItem)
+  prevItemRef.current = prevItem
+  const nextItemRef = useRef(nextItem)
+  nextItemRef.current = nextItem
+  const addRelationRef = useRef(addRelation)
+  addRelationRef.current = addRelation
+  const addSpanRef = useRef(addSpan)
+  addSpanRef.current = addSpan
+  const undoRef = useRef(undo)
+  undoRef.current = undo
+  const handleSaveAndNextRef = useRef(handleSaveAndNext)
+  handleSaveAndNextRef.current = handleSaveAndNext
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null
       const editable = !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)
       if (editable) return
-      if (e.ctrlKey && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); return }
-      if (e.key === 'Delete') { if (selectedSpanId !== null) { removeSpanById(selectedSpanId); setSelectedSpanId(null); setRelFromId(null); } return }
+      const s = keyStateRef.current
+      if (e.ctrlKey && e.key.toLowerCase() === 'z') { e.preventDefault(); undoRef.current(); return }
+      if (e.key === 'Delete') { if (s.selectedSpanId !== null) { removeSpanByIdRef.current(s.selectedSpanId); setSelectedSpanId(null); setRelFromId(null); } return }
       if (e.key === 'Escape') { e.preventDefault(); setSelectedSpanId(null); setPending(null); setLabelPickerOpen(false); setRelPickerOpen(false); setRelFromId(null); setShowSettings(false); return }
-      if (e.key === 'ArrowLeft') { e.preventDefault(); prevItem(); return }
-      if (e.key === 'ArrowRight') { e.preventDefault(); nextItem(); return }
+      if (e.key === 'ArrowLeft') { e.preventDefault(); prevItemRef.current(); return }
+      if (e.key === 'ArrowRight') { e.preventDefault(); nextItemRef.current(); return }
       const d = Number(e.key)
       if (!Number.isNaN(d) && d >= 1 && d <= 9) {
         const idx = d - 1
         if (e.ctrlKey || e.metaKey) {
           e.preventDefault(); e.stopPropagation()
-          if (relPickerOpen && pendingRel && relationTypes[idx]) addRelation(relationTypes[idx])
+          if (s.relPickerOpen && s.pendingRel && s.relationTypes[idx]) addRelationRef.current(s.relationTypes[idx])
         } else {
-          if (labelPickerOpen && pending && labels[idx]) { e.preventDefault(); addSpan(labels[idx]) }
+          if (s.labelPickerOpen && s.pending && s.labels[idx]) { e.preventDefault(); addSpanRef.current(s.labels[idx]) }
         }
         return
       }
       if (e.key === ' ') {
         e.preventDefault()
-        if (labelPickerOpen && pending && labels[0]) addSpan(labels[0]); else nextItem()
+        if (s.labelPickerOpen && s.pending && s.labels[0]) {
+          addSpanRef.current(s.labels[0])
+        } else if (!s.relPickerOpen) {
+          // 空格键 = 保存并下一篇，与点击按钮行为一致
+          handleSaveAndNextRef.current()
+        }
         return
       }
     }
     window.addEventListener('keydown', onKey, { capture: true })
     return () => window.removeEventListener('keydown', onKey)
-  }, [labelPickerOpen, pending, relPickerOpen, pendingRel, labels, relationTypes, selectedSpanId, spans, relations, history, currentIndex])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const highlightIds = new Set<number>()
   if (hoverRelIdx !== null) {
@@ -735,9 +773,28 @@ export default function AnnotatorApp() {
       }
   }
 
-  const onExport = () => {
-    let url = `/api/projects/${pid}/export`
-    window.open(url, '_blank')
+  const onExportZip = async () => {
+    try {
+      const res = await fetch(`/api/projects/${pid}/export-zip`, {
+        headers: authHeaders(false)
+      })
+      if (!res.ok) {
+        const err = await res.text()
+        throw new Error(`导出失败 (${res.status}): ${err}`)
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      const safeName = (projectName || 'export').replace(/[^a-zA-Z0-9一-鿿 _-]/g, '').trim() || 'export'
+      a.href = url
+      a.download = `${safeName}_${new Date().toISOString().slice(0,10)}.zip`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch(e: any) {
+      alert('打包导出失败: ' + (e.message || e))
+    }
   }
 
   const onSave = async () => {
@@ -865,157 +922,160 @@ export default function AnnotatorApp() {
   return (
     <div className="app-container">
       <header className="header">
-          <div className="flex items-center gap-4">
-              <h2>文本类标注平台</h2>
-              <button className="btn btn-sm" onClick={() => setShowSettings(true)}>设置</button>
+          <div className="flex items-center gap-3">
+              {/* 品牌 Logo */}
+              <div style={{
+                width: 32, height: 32, borderRadius: 'var(--radius)',
+                background: 'linear-gradient(135deg, #1E40AF, #3B82F6)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                boxShadow: '0 2px 8px rgba(30,64,175,.2)'
+              }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                </svg>
+              </div>
+              <h2>LabelFast 文本标注</h2>
+              <button className="btn btn-sm" onClick={() => setShowSettings(true)}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                </svg>
+                设置
+              </button>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            {/* 用户信息区域 */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <div className="user-info">
               <span className="username">{user?.username || '未知用户'}</span>
-              <button className="logout-btn" onClick={handleLogout}>退出登录</button>
+              <button className="logout-btn" onClick={handleLogout}>退出</button>
             </div>
-            <button className="btn btn-primary" onClick={() => window.location.href = '/minimind/'}>
-              切换到图像类标注平台
+            <button className="btn" onClick={() => window.location.href = '/minimind/'} style={{ fontWeight: 500 }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/>
+              </svg>
+              图像标注
             </button>
           </div>
       </header>
 
       <div className="main-content">
         <aside className="sidebar">
-          <div className="sidebar-header">
-            <div className="flex justify-between items-center mb-2">
-               <span className="sidebar-title" style={{marginBottom:0}}>项目配置</span>
-               <div className="flex gap-2">
-                 <button onClick={onSave} className="btn btn-primary btn-sm" disabled={!projectName || !pid}>保存</button>
-                 <button onClick={onExport} className="btn btn-sm" disabled={!projectName || !pid}>导出</button>
-               </div>
+          {/* ================================================================ */}
+          {/*  模块 1 — 项目配置                                                   */}
+          {/* ================================================================ */}
+          <div className="sidebar-module">
+            <div className="sidebar-module-title">
+              项目配置
+              <span className="sidebar-module-actions">
+                <button onClick={onSave} className="btn btn-primary btn-sm" disabled={!pid}>保存</button>
+                <button onClick={onExportZip} className="btn btn-accent btn-sm" disabled={!pid} title="一键打包 ZIP（含 JSON+JSONL+CSV）">打包导出</button>
+              </span>
             </div>
-            <div className="flex flex-col gap-2 mb-2">
+            <div className="sidebar-module-body">
               <select className="input" onChange={async (e) => {
                   const id = Number(e.target.value)
                   if (!id) return
                   const p = projectList.find(x => x.id === id)
                   if (!p) return
-                  setPid(p.id)
-                  setProjectName(p.name)
-                  try {
-                    await loadProject(p.id)
-                  } catch (err) {
-                    alert("加载项目失败: " + err)
-                  }
+                  setPid(p.id); setProjectName(p.name)
+                  try { await loadProject(p.id) } catch (err) { alert("加载失败: " + err) }
               }} value={pid ? String(pid) : ""}>
-                  <option value="">-- 选择已有项目 --</option>
+                  <option value="">选择已有项目...</option>
                   {projectList.map(p => <option key={p.id} value={String(p.id)}>{p.name}</option>)}
               </select>
-              <div className="flex gap-2">
-                <input className="input" value={projectName} onChange={e => setProjectName(e.target.value)} placeholder="项目名称" />
-                <button onClick={handleSwitchProject} className="btn btn-primary btn-sm">切换/创建</button>
-              </div>
-            </div>
-            <div className="flex gap-2">
-                <button type="button" onClick={onClearAll} className="btn btn-danger btn-sm" style={{flex: 1}} disabled={!projectName || !pid}>清空数据</button>
-                <button type="button" onClick={onDeleteProject} className="btn btn-danger btn-sm" style={{flex: 1}} disabled={!projectName || !pid}>删除项目</button>
-            </div>
 
-            <div className="mt-4">
-              <div className="text-sm text-gray mb-2">上传配置 (TXT):</div>
-              <input type="file" accept=".txt" onChange={handleConfigUpload} className="input" style={{padding: '4px'}} />
+              <div className="sidebar-divider">或 新建项目</div>
+
+              <input className="input" value={projectName} onChange={e => setProjectName(e.target.value)} placeholder="输入新项目名称" />
+              <button onClick={handleSwitchProject} className="btn btn-primary btn-sm" disabled={!projectName.trim()} style={{width:'100%'}}>
+                {pid ? '切换 / 创建项目' : '创建新项目'}
+              </button>
+
+              {pid ? (
+                <div className="sidebar-status ok">当前项目: {projectName}</div>
+              ) : (
+                <div className="sidebar-status hint">请选择项目或输入名称创建</div>
+              )}
+
+              <div className="flex gap-1">
+                <button onClick={onClearAll} className="btn btn-danger btn-sm" style={{flex:1}} disabled={!pid}>清空数据</button>
+                <button onClick={onDeleteProject} className="btn btn-danger btn-sm" style={{flex:1}} disabled={!pid}>删除项目</button>
+              </div>
             </div>
           </div>
 
-          <div className="sidebar-content" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
-            <div className="mb-4" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-              <div className="sidebar-title">文档列表</div>
-              <div
-                onDragOver={e => e.preventDefault()}
-                onDrop={onDrop}
-                style={{ border: "2px dashed var(--border)", borderRadius: "var(--radius)", padding: "12px", textAlign: "center", marginBottom: "1rem" }}
-              >
-                <div className="text-sm text-gray mb-2">拖拽 .txt 文件到此处</div>
-                <input type="file" multiple accept=".txt" onChange={onSelectFiles} style={{maxWidth: '100%'}} />
-                <div className="segmentation-wrapper" ref={splitHelpRef}>
-                  <div className="segmentation-header">
-                    <span className="segmentation-title">切分方式</span>
-                    <button
-                      type="button"
-                      className="help-icon-btn"
-                      onClick={() => setSplitHelpOpen(true)}
-                      title="查看详细说明"
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <circle cx="12" cy="12" r="10"></circle>
-                        <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
-                        <line x1="12" y1="17" x2="12.01" y2="17"></line>
-                      </svg>
-                      <span>说明</span>
-                    </button>
-                  </div>
-                  <div className="segmentation-tabs">
-                    <button
-                      type="button"
-                      onClick={() => setSplitMode('as_is')}
-                      className={`tab-item ${splitMode === 'as_is' ? 'active' : ''}`}
-                    >
-                      <IconOriginal active={splitMode === 'as_is'} />
-                      <span>原文</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSplitMode('paragraph')}
-                      className={`tab-item ${splitMode === 'paragraph' ? 'active' : ''}`}
-                    >
-                      <IconParagraph active={splitMode === 'paragraph'} />
-                      <span>段落</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSplitMode('sentence')}
-                      className={`tab-item ${splitMode === 'sentence' ? 'active' : ''}`}
-                    >
-                      <IconSentence active={splitMode === 'sentence'} />
-                      <span>句子</span>
-                    </button>
-                  </div>
-                </div>
-                <div className="text-sm text-gray mt-1">{uploadInfo}</div>
+          {/* ================================================================ */}
+          {/*  模块 2 — 标签配置                                                   */}
+          {/* ================================================================ */}
+          <div className="sidebar-module">
+            <div className="sidebar-module-title">标签配置</div>
+            <div className="sidebar-module-body">
+              <div className="sidebar-field">
+                <label className="sidebar-field-label">实体标签</label>
+                <input className="input" value={labelsInput} onChange={e => setLabelsInput(e.target.value)} placeholder="逗号分隔，如: 人名, 地名, 组织" />
               </div>
+              <div className="sidebar-field">
+                <label className="sidebar-field-label">关系类型</label>
+                <input className="input" value={relationTypesInput} onChange={e => setRelationTypesInput(e.target.value)} placeholder="逗号分隔，如: 位于, 属于, 担任" />
+              </div>
+              <div className="sidebar-field">
+                <label className="sidebar-field-label">从 TXT 文件导入</label>
+                <input type="file" accept=".txt" onChange={handleConfigUpload} className="input input-file" />
+              </div>
+            </div>
+          </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, overflowY: 'auto', minHeight: 0 }}>
+          {/* ================================================================ */}
+          {/*  模块 3 — 待标注对象 (占据全部剩余空间)                                 */}
+          {/* ================================================================ */}
+          <div className="sidebar-module sidebar-module-grow">
+            <div className="sidebar-module-title">
+              待标注对象
+              {items.length > 0 && <span className="sidebar-module-badge">{items.length}</span>}
+            </div>
+            <div className="sidebar-module-body sidebar-module-flex">
+              {/* 上传 + 切分 — 单行紧凑布局 */}
+              <div className="upload-bar" onDragOver={e => e.preventDefault()} onDrop={onDrop}>
+                <span className="upload-bar-hint">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" />
+                  </svg>
+                  拖拽 .txt 到此处
+                </span>
+                <div className="segmentation-tabs" ref={splitHelpRef} style={{flex:'none'}}>
+                  <button type="button" onClick={() => setSplitMode('as_is')} className={`tab-item ${splitMode==='as_is'?'active':''}`}>原文</button>
+                  <button type="button" onClick={() => setSplitMode('paragraph')} className={`tab-item ${splitMode==='paragraph'?'active':''}`}>段落</button>
+                  <button type="button" onClick={() => setSplitMode('sentence')} className={`tab-item ${splitMode==='sentence'?'active':''}`}>句子</button>
+                </div>
+                <label className="upload-bar-btn">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                  </svg>
+                  选择文件
+                  <input type="file" multiple accept=".txt" onChange={onSelectFiles} />
+                </label>
+              </div>
+              {uploadInfo && <div className="upload-info-text">{uploadInfo}</div>}
+
+              {/* 文档列表 — flex:1 占满剩余全部空间 */}
+              <div className="doc-list">
                 {filteredIndices.length === 0 ? (
-                   <div style={{
-                       border: "1px dashed var(--border)",
-                       borderRadius: "var(--radius)",
-                       padding: "1rem",
-                       textAlign: "left",
-                       color: "gray",
-                       fontSize: "0.85rem",
-                       background: "rgba(0,0,0,0.02)",
-                       flex: 1,
-                       display: 'flex',
-                       alignItems: 'flex-start',
-                       justifyContent: 'flex-start',
-                       overflowY: 'auto',
-                       whiteSpace: 'pre-wrap'
-                   }}>
-                       暂无待标注对象，请导入数据
-                   </div>
-                ) : (
-                  filteredIndices.map((i, idx) => (
-                  <div
-                    key={i}
-                    onClick={() => { saveCurrent(); loadIndex(i) }}
-                    className={`list-item ${currentIndex === i ? 'active' : ''}`}
-                  >
-                    <div className="flex items-center gap-2 overflow-hidden">
-                        <span className="count-badge">{idx + 1}</span>
-                        <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{items[i]}</div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <div className={`status-badge ${itemStatuses[i] || 'pending'}`} title={itemStatuses[i]}></div>
-                    </div>
+                  <div className="doc-list-empty">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" style={{opacity:.25,marginBottom:6}}>
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" />
+                    </svg>
+                    暂无待标注对象<br/>导入数据后在此显示
                   </div>
-                  ))
+                ) : (
+                  filteredIndices.map((i, idx) => {
+                    const st = itemStatuses[i] || 'pending'
+                    return (
+                    <div key={i} onClick={() => { saveCurrent(); loadIndex(i) }} className={`list-item ${currentIndex===i?'active':''}`}>
+                      <span className="count-badge">{idx+1}</span>
+                      <span className="list-item-text">{items[i]}</span>
+                      <span className={`status-dot ${st}`} title={st==='completed'?'已完成':st==='in_progress'?'进行中':'待处理'} />
+                    </div>
+                    )
+                  })
                 )}
               </div>
             </div>
@@ -1224,12 +1284,13 @@ export default function AnnotatorApp() {
         <div className="modal-overlay" onClick={() => setShowSettings(false)}>
             <div className="modal-content" onClick={e => e.stopPropagation()}>
                 <div className="modal-header">
-                    <h3 className="modal-title">主题与快捷键</h3>
-                    <button onClick={() => setShowSettings(false)} className="btn btn-sm">×</button>
+                    <h3 className="modal-title">显示设置与快捷键</h3>
+                    <button onClick={() => setShowSettings(false)} className="modal-close-btn">&times;</button>
                 </div>
 
                 <div className="settings-grid">
                     <div className="settings-group">
+                        <div className="font-bold text-sm mb-1" style={{color: 'var(--text)'}}>显示设置</div>
                         <label className="flex justify-between items-center">
                             字体大小 (px)
                             <input type="number" className="input" style={{width: 80}} value={fontSize} onChange={e => setFontSize(parseInt(e.target.value||'18'))} />
@@ -1242,21 +1303,21 @@ export default function AnnotatorApp() {
                             关系线宽 (px)
                             <input type="number" className="input" style={{width: 80}} value={relStrokeWidth} onChange={e => setRelStrokeWidth(parseInt(e.target.value||'2'))} />
                         </label>
-                        <label className="flex items-center gap-2">
+                        <label className="flex items-center gap-2" style={{cursor: 'pointer'}}>
                             <input type="checkbox" checked={relDashed} onChange={e => setRelDashed(e.target.checked)} />
-                            虚线关系
+                            虚线关系连线
                         </label>
                     </div>
 
                     <div>
-                        <div className="font-bold text-sm mb-2">快捷键说明</div>
+                        <div className="font-bold text-sm mb-2" style={{color: 'var(--text)'}}>快捷键说明</div>
                         <div className="shortcut-list">
-                            <div className="shortcut-item"><span>选择实体</span> <span className="shortcut-key">1-9</span></div>
-                            <div className="shortcut-item"><span>选择关系</span> <span className="shortcut-key">Ctrl+1-9</span></div>
+                            <div className="shortcut-item"><span>选择实体标签</span> <span className="shortcut-key">1 - 9</span></div>
+                            <div className="shortcut-item"><span>选择关系类型</span> <span className="shortcut-key">Ctrl + 1-9</span></div>
                             <div className="shortcut-item"><span>确认 / 下一篇</span> <span className="shortcut-key">Space</span></div>
-                            <div className="shortcut-item"><span>撤销</span> <span className="shortcut-key">Ctrl+Z</span></div>
-                            <div className="shortcut-item"><span>删除选中</span> <span className="shortcut-key">Delete</span></div>
-                            <div className="shortcut-item"><span>切换文档</span> <span className="shortcut-key">← / →</span></div>
+                            <div className="shortcut-item"><span>撤销操作</span> <span className="shortcut-key">Ctrl + Z</span></div>
+                            <div className="shortcut-item"><span>删除选中标注</span> <span className="shortcut-key">Delete</span></div>
+                            <div className="shortcut-item"><span>切换文档</span> <span className="shortcut-key">&larr; / &rarr;</span></div>
                         </div>
                     </div>
                 </div>
