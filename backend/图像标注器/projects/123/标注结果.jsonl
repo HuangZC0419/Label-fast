@@ -1,0 +1,2 @@
+{"conversations": [{"role": "user", "content": "详细描述这张图片。\n<image>"}, {"role": "assistant", "content": "122"}], "image": "示例项目\\images\\3.png"}
+{"conversations": [{"role": "user", "content": "详细描述这张图片。\n<image>"}, {"role": "assistant", "content": "ggg"}], "image": "示例项目\\images\\3.png"}

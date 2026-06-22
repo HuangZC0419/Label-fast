@@ -3,7 +3,7 @@ import os
 from sqlalchemy import select, delete
 from ..storage.db import get_session, init_db
 from ..storage.schema import Project, Document, Annotation, Relation
-from .record_service import BASE_DATA_DIR
+from .record_service import get_project_dir
 
 def get_project_id_by_name(name: str) -> Optional[int]:
     init_db()
@@ -34,11 +34,8 @@ def create_project(name: str, labels: List[str] = None, relation_types: List[str
         s.add(new_p)
         s.commit()
 
-        # Create project directory
-        safe_name = "".join([c for c in name if c.isalnum() or c in (' ', '-', '_')]).strip()
-        project_dir = os.path.join(BASE_DATA_DIR, safe_name)
-        if not os.path.exists(project_dir):
-            os.makedirs(project_dir)
+        # Create project directory under projects/
+        get_project_dir(name)
 
         return new_p.id
     except Exception as e:
@@ -169,6 +166,18 @@ def save_project_data(project_id: int, data: Dict[str, Any]):
                 saved_docs.append({"id": doc.id, "status": "saved"})
 
         s.commit()
+
+        # 同时将文本内容保存到项目文件夹的 imports/ 子目录
+        if "documents" in data:
+            texts_dir = os.path.join(get_project_dir(p.name), "imports")
+            os.makedirs(texts_dir, exist_ok=True)
+            for i, d_data in enumerate(data["documents"]):
+                text = d_data.get("text", "")
+                if text:
+                    filename = f"doc_{i+1:04d}.txt"
+                    with open(os.path.join(texts_dir, filename), 'w', encoding='utf-8') as tf:
+                        tf.write(text)
+
         return {"status": "ok", "documents": saved_docs}
     except Exception as e:
         s.rollback()
@@ -186,11 +195,11 @@ def clear_project(project_id: int) -> bool:
 
         # Delete all documents in project (cascades to annotations/relations usually, but let's be safe)
         # SQLAlchemy cascade might not be set up in schema, so manual delete is safer
-        
+
         # Find all docs
         q = select(Document.id).where(Document.project_id == project_id)
         doc_ids = s.execute(q).scalars().all()
-        
+
         if doc_ids:
             # Delete relations
             s.execute(delete(Relation).where(Relation.doc_id.in_(doc_ids)))
@@ -205,6 +214,9 @@ def clear_project(project_id: int) -> bool:
 
         s.commit()
         return True
+    except Exception:
+        s.rollback()
+        raise
     finally:
         s.close()
 
@@ -217,5 +229,8 @@ def delete_document(doc_id: int) -> bool:
         s.execute(delete(Document).where(Document.id == doc_id))
         s.commit()
         return True
+    except Exception:
+        s.rollback()
+        raise
     finally:
         s.close()

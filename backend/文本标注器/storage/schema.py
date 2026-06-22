@@ -1,6 +1,9 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy import Integer, String, DateTime, Text, ForeignKey, func
+
+# 兼容 Python 3.12+ 弃用 datetime.utcnow()，生成等同的 naive UTC datetime
+_utcnow = lambda: datetime.now(timezone.utc).replace(tzinfo=None)
 from sqlalchemy.types import JSON
 from .db import Base
 
@@ -11,7 +14,7 @@ class Project(Base):
     labels: Mapped[list] = mapped_column(JSON, nullable=False, default=[])
     relation_types: Mapped[list] = mapped_column(JSON, nullable=False, default=[])
     allow_overlap: Mapped[bool] = mapped_column(Integer, nullable=False, default=0)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
 class Document(Base):
     __tablename__ = "documents"
@@ -21,7 +24,7 @@ class Document(Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
     source_file: Mapped[str] = mapped_column(String(1024), nullable=True)
     unit_index: Mapped[int] = mapped_column(Integer, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
 class Annotation(Base):
     __tablename__ = "annotations"
@@ -30,7 +33,7 @@ class Annotation(Base):
     start: Mapped[int] = mapped_column(Integer, nullable=False)
     end: Mapped[int] = mapped_column(Integer, nullable=False)
     label: Mapped[str] = mapped_column(String(64), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
 class Relation(Base):
     __tablename__ = "relations"
@@ -39,7 +42,7 @@ class Relation(Base):
     from_ann_id: Mapped[int] = mapped_column(ForeignKey("annotations.id"), index=True, nullable=False)
     to_ann_id: Mapped[int] = mapped_column(ForeignKey("annotations.id"), index=True, nullable=False)
     relation_type: Mapped[str] = mapped_column(String(64), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
 
 class User(Base):

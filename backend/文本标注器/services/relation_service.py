@@ -42,6 +42,9 @@ def add_relation(doc_id: int, from_ann_id: int, to_ann_id: int, relation_type: s
         s.commit()
         s.refresh(r)
         return RelationModel(id=r.id, doc_id=r.doc_id, from_ann_id=r.from_ann_id, to_ann_id=r.to_ann_id, relation_type=r.relation_type, created_at=r.created_at)
+    except Exception:
+        s.rollback()
+        raise
     finally:
         s.close()
 
@@ -64,6 +67,9 @@ def update_relation(rel_id: int, relation_type: str):
         s.commit()
         r = s.get(Relation, rel_id)
         return RelationModel(id=r.id, doc_id=r.doc_id, from_ann_id=r.from_ann_id, to_ann_id=r.to_ann_id, relation_type=r.relation_type, created_at=r.created_at)
+    except Exception:
+        s.rollback()
+        raise
     finally:
         s.close()
 
@@ -75,5 +81,8 @@ def delete_relation(rel_id: int):
         res = s.execute(q)
         s.commit()
         return res.rowcount > 0
+    except Exception:
+        s.rollback()
+        raise
     finally:
         s.close()

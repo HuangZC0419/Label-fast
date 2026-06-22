@@ -2,7 +2,7 @@ import logging
 from typing import List
 from sqlalchemy import select, delete, update
 from ..storage.db import get_session, init_db
-from ..storage.schema import Annotation, Document, Project
+from ..storage.schema import Annotation, Document, Project, Relation
 from ..models import AnnotationModel
 
 logger = logging.getLogger(__name__)
@@ -42,6 +42,9 @@ def add_span(doc_id: int, start: int, end: int, label: str) -> AnnotationModel:
         s.commit()
         s.refresh(a)
         return AnnotationModel(id=a.id, doc_id=a.doc_id, start=a.start, end=a.end, label=a.label, created_at=a.created_at)
+    except Exception:
+        s.rollback()
+        raise
     finally:
         s.close()
 
@@ -72,6 +75,9 @@ def update_span(ann_id: int, start: int, end: int, label: str) -> AnnotationMode
         s.commit()
         a = s.get(Annotation, ann_id)
         return AnnotationModel(id=a.id, doc_id=a.doc_id, start=a.start, end=a.end, label=a.label, created_at=a.created_at)
+    except Exception:
+        s.rollback()
+        raise
     finally:
         s.close()
 
@@ -79,9 +85,16 @@ def delete_span(ann_id: int) -> bool:
     init_db()
     s = get_session()
     try:
+        # 先删除引用该标注的所有关系，避免孤儿关系记录
+        s.execute(delete(Relation).where(
+            (Relation.from_ann_id == ann_id) | (Relation.to_ann_id == ann_id)
+        ))
         q = delete(Annotation).where(Annotation.id == ann_id)
         res = s.execute(q)
         s.commit()
         return res.rowcount > 0
+    except Exception:
+        s.rollback()
+        raise
     finally:
         s.close()

@@ -6,7 +6,7 @@ from sqlalchemy import select, delete, update
 from ..storage.db import get_session, init_db
 from ..storage.schema import Project, Document, Annotation, Relation
 from ..models import ProjectModel
-from .record_service import BASE_DATA_DIR
+from .record_service import get_project_dir
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +22,9 @@ def create_project(name: str, labels: List[str]) -> ProjectModel:
         s.commit()
         s.refresh(p)
         return ProjectModel(id=p.id, name=p.name, labels=p.labels, relation_types=p.relation_types, allow_overlap=bool(p.allow_overlap), created_at=p.created_at)
+    except Exception:
+        s.rollback()
+        raise
     finally:
         s.close()
 
@@ -63,15 +66,13 @@ def delete_project(project_id: int) -> bool:
         s.delete(p)
         s.commit()
         
-        # Try to delete folder
+        # Try to delete project data folder under projects/
         if project_name:
-            safe_name = "".join([c for c in project_name if c.isalnum() or c in (' ', '-', '_')]).strip()
-            project_dir = os.path.join(BASE_DATA_DIR, safe_name)
-            if os.path.exists(project_dir):
-                try:
-                    shutil.rmtree(project_dir, ignore_errors=True)
-                except Exception as e:
-                    logger.warning(f"Failed to delete project directory {project_dir}: {e}")
+            try:
+                project_dir = get_project_dir(project_name)
+                shutil.rmtree(project_dir, ignore_errors=True)
+            except Exception as e:
+                logger.warning(f"Failed to delete project directory: {e}")
 
         return True
     except Exception as e:
@@ -93,6 +94,9 @@ def update_labels(project_id: int, labels: List[str]) -> ProjectModel:
         if not p:
             raise ValueError("project not found")
         return ProjectModel(id=p.id, name=p.name, labels=p.labels, relation_types=p.relation_types, allow_overlap=bool(p.allow_overlap), created_at=p.created_at)
+    except Exception:
+        s.rollback()
+        raise
     finally:
         s.close()
 
@@ -117,6 +121,9 @@ def update_allow_overlap(project_id: int, allow: bool) -> ProjectModel:
         if not p:
             raise ValueError("project not found")
         return ProjectModel(id=p.id, name=p.name, labels=p.labels, relation_types=p.relation_types, allow_overlap=bool(p.allow_overlap), created_at=p.created_at)
+    except Exception:
+        s.rollback()
+        raise
     finally:
         s.close()
 
@@ -130,5 +137,8 @@ def update_relation_types(project_id: int, relation_types: List[str]) -> Project
         if not p:
             raise ValueError("project not found")
         return ProjectModel(id=p.id, name=p.name, labels=p.labels, relation_types=p.relation_types, allow_overlap=bool(p.allow_overlap), created_at=p.created_at)
+    except Exception:
+        s.rollback()
+        raise
     finally:
         s.close()

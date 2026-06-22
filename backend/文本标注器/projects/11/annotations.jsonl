@@ -1,0 +1,2 @@
+{"id": -1, "text": "该零件采用铝合金 6061-T6 材料，制造过程按照《GB/T 1804-2000 一般公差—未注公差的线性尺寸》和《GB/T 1184-1996 形位公差的检测》执行。", "spans": [{"id": 1, "start": 44, "end": 56, "label": "工艺"}], "relations": [], "meta": {"timestamp": "2026-06-22T08:33:54.194Z", "project_name": "11", "project_id": 1}}
+{"id": -1, "text": "整体工艺路线包括 毛坯预处理、粗加工、半精加工、精加工与表面处理 等阶段。", "spans": [{"id": 2, "start": 11, "end": 21, "label": "零件"}], "relations": [], "meta": {"timestamp": "2026-06-22T08:33:57.328Z", "project_name": "11", "project_id": 1}}

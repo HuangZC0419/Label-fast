@@ -23,6 +23,9 @@ def import_texts(project_id: int, texts: List[str]) -> List[DocumentModel]:
         for d in docs:
             s.refresh(d)
         return [DocumentModel(id=d.id, project_id=d.project_id, text=d.text, status=d.status, source_file=d.source_file, unit_index=d.unit_index, created_at=d.created_at) for d in docs]
+    except Exception:
+        s.rollback()
+        raise
     finally:
         s.close()
 

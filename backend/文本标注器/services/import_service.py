@@ -58,7 +58,7 @@ def import_txt_files(project_id: int, file_paths: List[str], strategy: str = "se
         p = s.get(Project, project_id)
         if not p:
             raise ValueError("project not found")
-        docs: List[DocumentModel] = []
+        new_docs: List[Document] = []
         for path in file_paths:
             if not os.path.isfile(path):
                 raise ValueError("file not found: " + path)
@@ -67,13 +67,15 @@ def import_txt_files(project_id: int, file_paths: List[str], strategy: str = "se
             for idx, u in enumerate(units):
                 d = Document(project_id=project_id, text=u, status="pending", source_file=path, unit_index=idx)
                 s.add(d)
+                new_docs.append(d)
         s.commit()
-        for path in file_paths:
-            pass
-        q = s.query(Document).filter(Document.project_id == project_id).order_by(Document.id.asc()).all()
-        for d in q:
-            docs.append(DocumentModel(id=d.id, project_id=d.project_id, text=d.text, status=d.status, source_file=d.source_file, unit_index=d.unit_index, created_at=d.created_at))
-        return docs
+        # 刷新以获取数据库生成的 ID 和时间戳
+        for d in new_docs:
+            s.refresh(d)
+        return [DocumentModel(id=d.id, project_id=d.project_id, text=d.text, status=d.status, source_file=d.source_file, unit_index=d.unit_index, created_at=d.created_at) for d in new_docs]
+    except Exception:
+        s.rollback()
+        raise
     finally:
         s.close()
 

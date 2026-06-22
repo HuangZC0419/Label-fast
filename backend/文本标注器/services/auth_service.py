@@ -4,7 +4,7 @@ import logging
 import os
 import secrets
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -32,18 +32,17 @@ def _get_jwt_secret() -> str:
     """获取 JWT 签名密钥。
 
     优先级：
-    1. 环境变量 JWT_SECRET
-    2. 若未设置，随机生成并写入 backend/.env 文件，同时设置环境变量
+    1. 环境变量 JWT_SECRET（最高优先级，支持外部注入）
+    2. backend/.env 文件中已有的 JWT_SECRET（持久化密钥，跨重启不变）
+    3. 若以上均无，随机生成并写入 backend/.env 文件
 
     Returns:
         JWT 签名密钥字符串
     """
+    # 1. 优先从环境变量读取
     secret = os.environ.get("JWT_SECRET")
     if secret:
         return secret
-
-    # 生成安全的随机密钥
-    secret = secrets.token_urlsafe(32)
 
     # 计算 backend/.env 路径
     # 当前文件: backend/文本标注器/services/auth_service.py
@@ -53,17 +52,21 @@ def _get_jwt_secret() -> str:
     backend_dir = os.path.dirname(parent_dir)                        # backend/
     env_path = os.path.join(backend_dir, ".env")
 
+    # 2. 尝试从 .env 文件读取已有密钥（避免每次重启重新生成导致 Token 失效）
+    existing_secret = _read_jwt_secret_from_env_file(env_path)
+    if existing_secret:
+        os.environ["JWT_SECRET"] = existing_secret
+        return existing_secret
+
+    # 3. 生成新的安全随机密钥并持久化到 .env 文件
+    secret = secrets.token_urlsafe(32)
+
     try:
         if os.path.exists(env_path):
-            # 追加到已有 .env
-            with open(env_path, "r", encoding="utf-8") as f:
-                content = f.read()
-            if "JWT_SECRET" not in content:
-                with open(env_path, "a", encoding="utf-8") as f:
-                    f.write(f"\n# 自动生成的 JWT 签名密钥\nJWT_SECRET={secret}\n")
-                logger.info("JWT_SECRET 已追加到 %s", env_path)
+            with open(env_path, "a", encoding="utf-8") as f:
+                f.write(f"\n# 自动生成的 JWT 签名密钥\nJWT_SECRET={secret}\n")
+            logger.info("JWT_SECRET 已追加到 %s", env_path)
         else:
-            # 创建新的 .env
             with open(env_path, "w", encoding="utf-8") as f:
                 f.write(f"# 自动生成的 JWT 签名密钥\nJWT_SECRET={secret}\n")
             logger.info(".env 文件已创建，JWT_SECRET 已写入 %s", env_path)
@@ -72,6 +75,26 @@ def _get_jwt_secret() -> str:
 
     os.environ["JWT_SECRET"] = secret
     return secret
+
+
+def _read_jwt_secret_from_env_file(env_path: str) -> str | None:
+    """从 .env 文件中提取已存在的 JWT_SECRET 值。"""
+    if not os.path.exists(env_path):
+        return None
+    try:
+        with open(env_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                # 跳过注释和空行
+                if not line or line.startswith("#"):
+                    continue
+                if line.startswith("JWT_SECRET="):
+                    value = line.split("=", 1)[1].strip().strip('"').strip("'")
+                    if value:
+                        return value
+    except OSError:
+        pass
+    return None
 
 
 # 模块加载时获取密钥
@@ -89,9 +112,14 @@ def _normalize_cell(value: Any) -> str:
 
 
 def load_excel_users() -> dict[str, ExcelUser]:
-    """从 users.xlsx 读取账号，启动时加载一次。"""
+    """从 users.xlsx 读取账号，启动时加载一次。
+
+    若文件不存在或为空，记录警告并返回空字典而不是抛出异常，
+    确保服务可以正常启动（登录时会返回清晰的错误信息）。
+    """
     if not USERS_XLSX_PATH.exists():
-        raise RuntimeError(f"用户账号文件不存在: {USERS_XLSX_PATH}")
+        logger.warning("用户账号文件不存在: %s，服务将以无用户模式启动", USERS_XLSX_PATH)
+        return {}
 
     workbook = load_workbook(USERS_XLSX_PATH, read_only=True, data_only=True)
     try:
@@ -101,12 +129,14 @@ def load_excel_users() -> dict[str, ExcelUser]:
         workbook.close()
 
     if not rows:
-        raise RuntimeError("users.xlsx 为空")
+        logger.warning("users.xlsx 为空")
+        return {}
 
     header = [_normalize_cell(cell).lower() for cell in rows[0]]
     required_headers = {"username", "password"}
     if not required_headers.issubset(set(header)):
-        raise RuntimeError("users.xlsx 缺少 username/password 表头")
+        logger.warning("users.xlsx 缺少 username/password 表头")
+        return {}
 
     username_index = header.index("username")
     password_index = header.index("password")
@@ -134,7 +164,7 @@ def load_excel_users() -> dict[str, ExcelUser]:
         next_id += 1
 
     if not users:
-        raise RuntimeError("users.xlsx 中没有可用账号")
+        logger.warning("users.xlsx 中没有可用账号")
 
     logger.info("已从 %s 加载 %d 个账号", USERS_XLSX_PATH, len(users))
     return users
@@ -160,8 +190,8 @@ def create_token(user_id: int, username: str) -> str:
     payload = {
         "user_id": user_id,
         "username": username,
-        "exp": datetime.utcnow() + timedelta(days=JWT_EXPIRATION_DAYS),
-        "iat": datetime.utcnow(),
+        "exp": datetime.now(timezone.utc) + timedelta(days=JWT_EXPIRATION_DAYS),
+        "iat": datetime.now(timezone.utc),
     }
     token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
     return token
@@ -204,6 +234,8 @@ def get_user_by_id(user_id: int) -> ExcelUser | None:
 
 def login_user(username: str, password: str) -> dict:
     """使用 users.xlsx 中的账号密码登录。"""
+    if not EXCEL_USERS_BY_USERNAME:
+        raise ValueError("系统尚未配置任何用户账号，请联系管理员添加 users.xlsx")
     user = get_user_by_username(username)
     if not user or user.password != password:
         raise ValueError("用户名或密码错误")

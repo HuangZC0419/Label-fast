@@ -1,8 +1,9 @@
 import os
+import io
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Body, Response, Query, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -260,15 +261,27 @@ def delete_document_api(doc_id: int):
 @app.get("/api/projects/{project_id}/export")
 def export_project_api(project_id: int, format: str = "json_v2", doc_ids: Optional[List[int]] = Query(None)):
     try:
-        # Call the pure service function
-        # Note: export_service.export_project returns the absolute file path
         file_path = export_service.export_project(project_id, fmt=format, doc_ids=doc_ids)
-        
         if not os.path.exists(file_path):
             raise HTTPException(status_code=500, detail="Export failed to generate file")
-            
         filename = os.path.basename(file_path)
         return FileResponse(path=file_path, filename=filename, media_type='application/json')
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/projects/{project_id}/export-zip")
+def export_project_zip_api(project_id: int):
+    """一键打包导出 ZIP：包含 JSON + JSONL + CSV 三种格式。"""
+    try:
+        zip_bytes = export_service.export_project_zip(project_id)
+        from datetime import datetime, timezone
+        ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        return StreamingResponse(
+            io.BytesIO(zip_bytes),
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="export_{ts}.zip"'}
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
