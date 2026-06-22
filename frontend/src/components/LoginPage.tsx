@@ -3,26 +3,13 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 
 export default function LoginPage() {
-  const { login, register } = useAuth()
+  const { login } = useAuth()
   const navigate = useNavigate()
 
-  const [isRegister, setIsRegister] = useState(false)
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
-  const [confirmPassword, setConfirmPassword] = useState('')
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
-  const [fade, setFade] = useState(false)
-
-  // 切换登录/注册模式时添加过渡动画
-  const switchMode = () => {
-    setFade(true)
-    setError('')
-    setTimeout(() => {
-      setIsRegister(!isRegister)
-      setFade(false)
-    }, 200)
-  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -34,22 +21,12 @@ export default function LoginPage() {
       return
     }
 
-    // 注册模式下检查密码确认
-    if (isRegister && password !== confirmPassword) {
-      setError('两次输入的密码不一致')
-      return
-    }
-
     setSubmitting(true)
     try {
-      if (isRegister) {
-        await register(username.trim(), password)
-      } else {
-        await login(username.trim(), password)
-      }
+      await login(username.trim(), password)
       navigate('/app')
     } catch (err: any) {
-      setError(err.message || '操作失败，请重试')
+      setError(err.message || '登录失败，请重试')
     } finally {
       setSubmitting(false)
     }
@@ -64,27 +41,22 @@ export default function LoginPage() {
           padding: '10px 14px', marginBottom: 16, fontSize: 13, color: '#92400e',
           textAlign: 'center', lineHeight: 1.6
         }}>
-          🔧 <strong>开发环境</strong><br/>
-          账号：<code style={{background:'#fde68a',padding:'1px 6px',borderRadius:3}}>admin</code>
-          密码：<code style={{background:'#fde68a',padding:'1px 6px',borderRadius:3}}>admin123</code>
+          <strong>账号由管理员维护</strong><br/>
+          请使用 <code style={{background:'#fde68a',padding:'1px 6px',borderRadius:3}}>backend/users.xlsx</code> 中配置的用户名和密码登录
         </div>
 
         {/* 卡片头部 */}
         <div className="login-card-header">
           <div className="login-card-icon">📝</div>
-          <h2 className="login-card-title">
-            {isRegister ? '创建账号' : '文本标注器'}
-          </h2>
-          <p className="login-card-subtitle">
-            {isRegister ? '加入团队开始标注' : '高效标注，精准分类'}
-          </p>
+          <h2 className="login-card-title">文本标注器</h2>
+          <p className="login-card-subtitle">高效标注，精准分类</p>
         </div>
 
         {/* 错误提示 */}
         {error && <div className="login-error">{error}</div>}
 
         {/* 表单区域 */}
-        <div className={`login-form-area${fade ? ' fade' : ''}`}>
+        <div className="login-form-area">
           <form onSubmit={handleSubmit}>
             {/* 用户名字段 */}
             <div className="login-field">
@@ -111,39 +83,15 @@ export default function LoginPage() {
               />
             </div>
 
-            {/* 注册模式下显示确认密码 */}
-            {isRegister && (
-              <div className="login-field">
-                <div className="login-field-label">确认密码</div>
-                <input
-                  className="login-input"
-                  type="password"
-                  placeholder="请再次输入密码"
-                  value={confirmPassword}
-                  onChange={e => setConfirmPassword(e.target.value)}
-                />
-              </div>
-            )}
-
             {/* 提交按钮 */}
             <button
               className="login-submit-btn"
               type="submit"
               disabled={submitting}
             >
-              {submitting
-                ? (isRegister ? '注册中...' : '登录中...')
-                : (isRegister ? '注 册' : '登 录')}
+              {submitting ? '登录中...' : '登 录'}
             </button>
           </form>
-
-          {/* 底部切换链接 */}
-          <div className="login-switch">
-            {isRegister ? '已有账号？' : '还没有账号？'}
-            <button className="login-switch-link" type="button" onClick={switchMode}>
-              {isRegister ? '去登录' : '立即注册'}
-            </button>
-          </div>
         </div>
       </div>
     </div>

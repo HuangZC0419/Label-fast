@@ -9,11 +9,17 @@
 
 ```bash
 cd h:\Git\Label-fast-main\backend
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 python server.py
 ```
 
 后端默认启动在 `http://localhost:8000`。
+
+## 账号管理
+
+- 管理员维护 `backend/users.xlsx`
+- 修改表格后重启后端生效
+- 系统不提供自助注册功能
 
 ## 启动前端
 

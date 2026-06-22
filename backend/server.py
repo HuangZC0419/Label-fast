@@ -1,8 +1,10 @@
 import os
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Body, Response, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 from dotenv import load_dotenv
 from 文本标注器.services import export_service, sync_service, record_service, project_service, auth_service
@@ -16,6 +18,8 @@ app = FastAPI()
 
 # Mount Minimind Image Labeler
 app.mount("/minimind", minimind_app)
+
+FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
 
 # Add CORS to allow frontend access
 app.add_middleware(
@@ -76,6 +80,36 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
 app.add_middleware(JWTAuthMiddleware)
 
 
+def _configure_frontend_static() -> None:
+    """如果前端已构建，则由当前 FastAPI 进程一并托管。"""
+    if not FRONTEND_DIST.exists() or not (FRONTEND_DIST / "index.html").exists():
+        return
+
+    assets_dir = FRONTEND_DIST / "assets"
+    if assets_dir.exists() and not any(getattr(route, "path", None) == "/assets" for route in app.routes):
+        app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
+
+    class FrontendSPAMiddleware(BaseHTTPMiddleware):
+        """将非 API 路径交给前端 SPA 处理。"""
+
+        async def dispatch(self, request: Request, call_next):
+            path = request.url.path
+
+            if path.startswith("/api/") or path.startswith("/minimind"):
+                return await call_next(request)
+
+            file_path = FRONTEND_DIST / path.lstrip("/")
+            if path != "/" and file_path.is_file():
+                return FileResponse(str(file_path))
+
+            return FileResponse(str(FRONTEND_DIST / "index.html"))
+
+    app.add_middleware(FrontendSPAMiddleware)
+
+
+_configure_frontend_static()
+
+
 @app.get("/")
 def read_root():
     return {"message": "Label Fast Backend is running. Visit /api/health to check status."}
@@ -87,26 +121,6 @@ async def favicon():
 # ============================================================
 # 认证路由
 # ============================================================
-
-@app.post("/api/auth/register")
-def register_api(data: Dict[str, Any] = Body(...)):
-    """用户注册 — 创建账号并返回 JWT 令牌"""
-    username = data.get("username")
-    password = data.get("password")
-    if not username or not password:
-        raise HTTPException(status_code=400, detail="用户名和密码不能为空")
-    if not isinstance(username, str) or not isinstance(password, str):
-        raise HTTPException(status_code=400, detail="用户名和密码必须为字符串")
-    if len(username) > 64:
-        raise HTTPException(status_code=400, detail="用户名不能超过64个字符")
-    try:
-        result = auth_service.register_user(username, password)
-        return result
-    except ValueError as e:
-        raise HTTPException(status_code=409, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
 
 @app.post("/api/auth/login")
 def login_api(data: Dict[str, Any] = Body(...)):
@@ -143,17 +157,16 @@ def get_current_user(request: Request):
     if user_id is None:
         raise HTTPException(status_code=401, detail="令牌无效")
 
-    # 查找用户信息
-    from 文本标注器.storage.db import get_session
-    from 文本标注器.storage.schema import User
-    session = get_session()
-    try:
-        user = session.query(User).filter(User.id == user_id).first()
-        if not user:
-            raise HTTPException(status_code=404, detail="用户不存在")
-        return {"id": user.id, "username": user.username}
-    finally:
-        session.close()
+    user = auth_service.get_user_by_id(int(user_id))
+    if not user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+
+    return {
+        "id": user.id,
+        "username": user.username,
+        "role": user.role,
+        "name": user.name or user.username,
+    }
 
 
 @app.get("/api/health")

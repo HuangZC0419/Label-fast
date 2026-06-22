@@ -1,17 +1,28 @@
-"""认证服务模块 — 用户注册、登录、JWT 令牌管理"""
+"""认证服务模块 — 从 users.xlsx 读取账号，登录后签发 JWT。"""
 
+import logging
 import os
 import secrets
-import logging
+from dataclasses import dataclass
 from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Any
 
 import jwt
-import bcrypt
-
-from ..storage.db import get_session
-from ..storage.schema import User
+from openpyxl import load_workbook
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class ExcelUser:
+    """Excel 中的一条用户记录。"""
+
+    id: int
+    username: str
+    password: str
+    role: str = ""
+    name: str = ""
 
 # ============================================================
 # JWT 密钥管理
@@ -69,33 +80,67 @@ JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_DAYS = 7
 
 
-# ============================================================
-# 密码工具函数
-# ============================================================
-
-def hash_password(password: str) -> str:
-    """对明文密码进行 bcrypt 哈希。
-
-    Args:
-        password: 明文密码
-
-    Returns:
-        bcrypt 哈希后的密码字符串
-    """
-    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+# 账号 Excel 路径：backend/users.xlsx
+USERS_XLSX_PATH = Path(__file__).resolve().parents[2] / "users.xlsx"
 
 
-def verify_password(password: str, password_hash: str) -> bool:
-    """验证明文密码与哈希值是否匹配。
+def _normalize_cell(value: Any) -> str:
+    return str(value).strip() if value is not None else ""
 
-    Args:
-        password: 用户输入的明文密码
-        password_hash: 数据库中存储的 bcrypt 哈希
 
-    Returns:
-        匹配返回 True，否则返回 False
-    """
-    return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
+def load_excel_users() -> dict[str, ExcelUser]:
+    """从 users.xlsx 读取账号，启动时加载一次。"""
+    if not USERS_XLSX_PATH.exists():
+        raise RuntimeError(f"用户账号文件不存在: {USERS_XLSX_PATH}")
+
+    workbook = load_workbook(USERS_XLSX_PATH, read_only=True, data_only=True)
+    try:
+        worksheet = workbook[workbook.sheetnames[0]]
+        rows = list(worksheet.iter_rows(values_only=True))
+    finally:
+        workbook.close()
+
+    if not rows:
+        raise RuntimeError("users.xlsx 为空")
+
+    header = [_normalize_cell(cell).lower() for cell in rows[0]]
+    required_headers = {"username", "password"}
+    if not required_headers.issubset(set(header)):
+        raise RuntimeError("users.xlsx 缺少 username/password 表头")
+
+    username_index = header.index("username")
+    password_index = header.index("password")
+    role_index = header.index("role") if "role" in header else None
+    name_index = header.index("name") if "name" in header else None
+
+    users: dict[str, ExcelUser] = {}
+    next_id = 1
+    for row in rows[1:]:
+        if row is None:
+            continue
+
+        username = _normalize_cell(row[username_index] if username_index < len(row) else None)
+        password = _normalize_cell(row[password_index] if password_index < len(row) else None)
+        if not username or not password:
+            continue
+
+        users[username] = ExcelUser(
+            id=next_id,
+            username=username,
+            password=password,
+            role=_normalize_cell(row[role_index] if role_index is not None and role_index < len(row) else None),
+            name=_normalize_cell(row[name_index] if name_index is not None and name_index < len(row) else None),
+        )
+        next_id += 1
+
+    if not users:
+        raise RuntimeError("users.xlsx 中没有可用账号")
+
+    logger.info("已从 %s 加载 %d 个账号", USERS_XLSX_PATH, len(users))
+    return users
+
+
+EXCEL_USERS_BY_USERNAME = load_excel_users()
 
 
 # ============================================================
@@ -146,84 +191,32 @@ def verify_token(token: str) -> dict | None:
 # 认证业务逻辑
 # ============================================================
 
-def register_user(username: str, password: str) -> dict:
-    """注册新用户。
+def get_user_by_username(username: str) -> ExcelUser | None:
+    return EXCEL_USERS_BY_USERNAME.get(username)
 
-    检查用户名唯一性，对密码进行哈希，创建用户记录并返回 JWT 令牌。
 
-    Args:
-        username: 用户名（最长 64 字符，唯一）
-        password: 明文密码
-
-    Returns:
-        {"token": "<jwt>", "user": {"id": <int>, "username": "<str>"}}
-
-    Raises:
-        ValueError: 用户名已存在
-    """
-    session = get_session()
-    try:
-        # 检查用户名唯一性
-        existing = session.query(User).filter(User.username == username).first()
-        if existing:
-            raise ValueError("用户名已存在")
-
-        # 创建用户
-        user = User(
-            username=username,
-            password_hash=hash_password(password),
-        )
-        session.add(user)
-        session.commit()
-        session.refresh(user)
-
-        token = create_token(user.id, user.username)
-        logger.info("用户注册成功: %s (id=%d)", username, user.id)
-
-        return {
-            "token": token,
-            "user": {"id": user.id, "username": user.username},
-        }
-    except ValueError:
-        session.rollback()
-        raise
-    except Exception:
-        session.rollback()
-        raise
-    finally:
-        session.close()
+def get_user_by_id(user_id: int) -> ExcelUser | None:
+    for user in EXCEL_USERS_BY_USERNAME.values():
+        if user.id == user_id:
+            return user
+    return None
 
 
 def login_user(username: str, password: str) -> dict:
-    """用户登录。
+    """使用 users.xlsx 中的账号密码登录。"""
+    user = get_user_by_username(username)
+    if not user or user.password != password:
+        raise ValueError("用户名或密码错误")
 
-    根据用户名查找用户，验证密码，返回 JWT 令牌。
+    token = create_token(user.id, user.username)
+    logger.info("用户登录成功: %s (id=%d)", username, user.id)
 
-    Args:
-        username: 用户名
-        password: 明文密码
-
-    Returns:
-        {"token": "<jwt>", "user": {"id": <int>, "username": "<str>"}}
-
-    Raises:
-        ValueError: 用户名或密码错误
-    """
-    session = get_session()
-    try:
-        user = session.query(User).filter(User.username == username).first()
-        if not user:
-            raise ValueError("用户名或密码错误")
-
-        if not verify_password(password, user.password_hash):
-            raise ValueError("用户名或密码错误")
-
-        token = create_token(user.id, user.username)
-        logger.info("用户登录成功: %s (id=%d)", username, user.id)
-
-        return {
-            "token": token,
-            "user": {"id": user.id, "username": user.username},
-        }
-    finally:
-        session.close()
+    return {
+        "token": token,
+        "user": {
+            "id": user.id,
+            "username": user.username,
+            "role": user.role,
+            "name": user.name or user.username,
+        },
+    }

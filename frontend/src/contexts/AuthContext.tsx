@@ -10,7 +10,6 @@ interface AuthContextType {
   isAuthenticated: boolean
   loading: boolean
   login: (username: string, password: string) => Promise<void>
-  register: (username: string, password: string) => Promise<void>
   logout: () => void
 }
 
@@ -60,22 +59,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(data.user)
   }
 
-  const register = async (username: string, password: string) => {
-    const res = await fetch('/api/auth/register', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password })
-    })
-    if (!res.ok) {
-      const err = await res.json()
-      throw new Error(err.detail || '注册失败')
-    }
-    const data = await res.json()
-    localStorage.setItem('token', data.token)
-    setToken(data.token)
-    setUser(data.user)
-  }
-
   const logout = () => {
     localStorage.removeItem('token')
     setToken(null)
@@ -83,7 +66,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, token, isAuthenticated: !!user, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, token, isAuthenticated: !!user, loading, login, logout }}>
       {children}
     </AuthContext.Provider>
   )
