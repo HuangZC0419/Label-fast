@@ -1,0 +1,25 @@
+version: "3.3"
+services:
+  label-fast:
+    image: label-fast:latest
+    container_name: label-fast
+    ports:
+      - "3002:3002"
+    volumes:
+      - ./backend/文本标注器/projects:/app/backend/文本标注器/projects:z
+      - ./backend/文本标注器/storage:/app/backend/文本标注器/storage:z
+      - ./backend/图像标注器/projects:/app/backend/图像标注器/projects:z
+      - ./backend/图像标注器/projects.json:/app/backend/图像标注器/projects.json:z
+      - ./backend/users.xlsx:/app/backend/users.xlsx:z
+    restart: unless-stopped
+    security_opt:
+      - seccomp:unconfined
+    ulimits:
+      nproc: 65535
+      nofile:
+        soft: 65535
+        hard: 65535
+    environment:
+      - OPENBLAS_NUM_THREADS=1
+      - GOTO_NUM_THREADS=1
+      - OMP_NUM_THREADS=1

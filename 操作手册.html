@@ -1,0 +1,994 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LabelFast 操作手册</title>
+<style>
+  :root {
+    --primary: #1E40AF;
+    --primary-light: #3B82F6;
+    --accent: #F59E0B;
+    --bg: #F8FAFC;
+    --card: #FFFFFF;
+    --border: #E2E8F0;
+    --text: #1E293B;
+    --text2: #64748B;
+    --danger: #DC2626;
+    --danger-bg: #FEF2F2;
+    --success: #16A34A;
+    --success-bg: #F0FDF4;
+    --info-bg: #EFF6FF;
+    --radius: 10px;
+    --shadow: 0 1px 3px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04);
+    --shadow-lg: 0 4px 12px rgba(0,0,0,.08),0 2px 4px rgba(0,0,0,.04);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ── 侧边导航 ── */
+  .sidebar {
+    position: fixed;
+    top: 0; left: 0;
+    width: 250px; height: 100vh;
+    background: #0F172A;
+    color: #CBD5E1;
+    overflow-y: auto;
+    z-index: 100;
+    padding: 20px 0;
+    font-size: 14px;
+  }
+  .sidebar-logo {
+    display: flex; align-items: center; gap: 10px;
+    padding: 0 20px 20px;
+    border-bottom: 1px solid rgba(255,255,255,.08);
+    margin-bottom: 12px;
+  }
+  .sidebar-logo .logo-icon {
+    width: 34px; height: 34px;
+    background: linear-gradient(135deg, var(--primary), var(--primary-light));
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .sidebar-logo span { font-size: 18px; font-weight: 700; color: #F1F5F9; }
+  .sidebar-group-title {
+    padding: 12px 20px 6px;
+    font-size: 11px; font-weight: 600; text-transform: uppercase;
+    color: #64748B; letter-spacing: .06em;
+  }
+  .sidebar a {
+    display: block; padding: 8px 20px;
+    color: #94A3B8; text-decoration: none;
+    border-left: 3px solid transparent;
+    transition: all 150ms;
+  }
+  .sidebar a:hover, .sidebar a.active {
+    color: #E2E8F0;
+    background: rgba(59,130,246,.12);
+    border-left-color: var(--primary-light);
+  }
+
+  /* ── 主内容区 ── */
+  .main { margin-left: 250px; max-width: 1020px; padding: 40px 48px 80px; }
+
+  /* ── 排版 ── */
+  h1 { font-size: 2.2rem; font-weight: 800; letter-spacing: -.02em; margin-bottom: 8px; color: #0F172A; }
+  h2 { font-size: 1.55rem; font-weight: 700; margin: 48px 0 20px; padding-bottom: 10px; border-bottom: 2px solid var(--border); color: var(--primary); }
+  h3 { font-size: 1.2rem; font-weight: 700; margin: 32px 0 14px; color: #334155; }
+  h4 { font-size: 1rem; font-weight: 600; margin: 20px 0 10px; color: #475569; }
+  p { margin-bottom: 14px; color: #334155; }
+  ul, ol { margin: 0 0 14px 22px; color: #334155; }
+  li { margin-bottom: 6px; }
+
+  /* ── 组件 ── */
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    margin-bottom: 20px;
+    box-shadow: var(--shadow);
+  }
+  .card-title {
+    font-weight: 700; font-size: 1.05rem;
+    margin-bottom: 14px; display: flex; align-items: center; gap: 8px;
+  }
+  .card-title .icon { font-size: 1.2rem; }
+
+  .btn-demo {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 7px 16px; border-radius: 6px;
+    font-size: 13px; font-weight: 600;
+    border: 1px solid var(--border);
+    background: #fff; color: var(--text);
+    white-space: nowrap;
+  }
+  .btn-demo.primary { background: var(--primary); color: #fff; border-color: var(--primary); }
+  .btn-demo.accent { background: var(--accent); color: #1E293B; border-color: var(--accent); }
+  .btn-demo.danger { background: var(--danger); color: #fff; border-color: var(--danger); }
+  .btn-demo.sm { padding: 4px 10px; font-size: 12px; }
+
+  /* ── 标注 → 按钮色样 ── */
+  .chip { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+  .chip.red  { background: #ffb3ba; } .chip.green { background: #baffc9; }
+  .chip.blue { background: #bae1ff; } .chip.yellow{ background: #ffffba; }
+  .chip.pink { background: #ffc9de; } .chip.cyan { background: #c9fff2; }
+  .rel-chip { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; color: #fff; }
+  .rel-chip.purple { background: #9c27b0; } .rel-chip.indigo { background: #3f51b5; }
+  .rel-chip.teal { background: #009688; } .rel-chip.orange{ background: #ff5722; }
+
+  /* ── 徽章 ── */
+  .badge {
+    display: inline-block; padding: 2px 8px; border-radius: 4px;
+    font-size: 12px; font-weight: 600;
+  }
+  .badge.ok { background: var(--success-bg); color: var(--success); }
+  .badge.warn { background: #FFFBEB; color: #D97706; }
+  .badge.info { background: var(--info-bg); color: var(--primary); }
+
+  /* ── 键盘按键 ── */
+  kbd {
+    display: inline-block; padding: 2px 7px;
+    font-size: 12px; font-family: 'Consolas','Courier New',monospace;
+    background: #F1F5F9; border: 1px solid #CBD5E1;
+    border-radius: 4px; box-shadow: 0 1px 0 #CBD5E1;
+    color: #334155;
+  }
+
+  /* ── 表格 ── */
+  table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 14px; }
+  th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border); }
+  th { background: #F8FAFC; font-weight: 600; color: #475569; font-size: 13px; }
+  tr:hover td { background: #F8FAFC; }
+
+  /* ── 提示框 ── */
+  .tip { border-left: 4px solid var(--primary); background: var(--info-bg); padding: 14px 18px; border-radius: 0 8px 8px 0; margin: 16px 0; }
+  .tip strong { color: var(--primary); }
+  .warn { border-left: 4px solid var(--accent); background: #FFFBEB; padding: 14px 18px; border-radius: 0 8px 8px 0; margin: 16px 0; }
+  .danger-note { border-left: 4px solid var(--danger); background: var(--danger-bg); padding: 14px 18px; border-radius: 0 8px 8px 0; margin: 16px 0; }
+
+  /* ── 步骤编号 ── */
+  .steps { counter-reset: step; list-style: none; margin-left: 0; }
+  .steps li { counter-increment: step; margin-bottom: 18px; display: flex; gap: 14px; align-items: flex-start; }
+  .steps li::before {
+    content: counter(step);
+    display: flex; align-items: center; justify-content: center;
+    min-width: 28px; height: 28px;
+    background: var(--primary); color: #fff;
+    border-radius: 50%; font-weight: 700; font-size: 14px;
+    flex-shrink: 0;
+  }
+
+  /* ── SVG 示意图容器 ── */
+  .figure {
+    text-align: center; margin: 20px 0;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: #fff;
+    padding: 10px;
+    overflow-x: auto;
+  }
+  .figure .caption {
+    font-size: 13px; color: var(--text2); margin-top: 8px;
+  }
+
+  /* ── 快捷键表 ── */
+  .shortcut-table td:first-child { white-space: nowrap; font-family: 'Consolas','Courier New',monospace; font-size: 13px; }
+  .shortcut-table td:first-child kbd { margin: 0 2px; }
+
+  /* ── 响应式 ── */
+  @media (max-width: 860px) {
+    .sidebar { display: none; }
+    .main { margin-left: 0; padding: 20px 16px; }
+  }
+
+  /* ── 打印优化 ── */
+  @media print {
+    .sidebar { display: none; }
+    .main { margin-left: 0; }
+    .card { break-inside: avoid; }
+  }
+
+  /* 封面 */
+  .cover {
+    text-align: center; padding: 60px 0 40px;
+    background: linear-gradient(135deg, #1E40AF 0%, #3B82F6 50%, #60A5FA 100%);
+    color: #fff; border-radius: 16px; margin-bottom: 40px;
+  }
+  .cover h1 { font-size: 2.8rem; color: #fff; letter-spacing: -.03em; }
+  .cover p { color: rgba(255,255,255,.85); font-size: 1.1rem; margin-top: 8px; }
+  .cover .version { display: inline-block; background: rgba(255,255,255,.2); padding: 4px 14px; border-radius: 20px; font-size: 13px; margin-top: 16px; }
+
+  /* 双栏对比 */
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 700px) { .two-col { grid-template-columns: 1fr; } }
+
+  /* 回到顶部 */
+  .back-to-top {
+    position: fixed; bottom: 24px; right: 24px;
+    width: 42px; height: 42px;
+    background: var(--primary); color: #fff;
+    border-radius: 50%; border: none; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px; box-shadow: var(--shadow-lg);
+    z-index: 200; opacity: .85; transition: opacity 200ms;
+  }
+  .back-to-top:hover { opacity: 1; }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════ 侧边导航 ═══════════════ -->
+<nav class="sidebar">
+  <div class="sidebar-logo">
+    <div class="logo-icon">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+      </svg>
+    </div>
+    <span>LabelFast</span>
+  </div>
+
+  <div class="sidebar-group-title">概述</div>
+  <a href="#overview">系统概述</a>
+  <a href="#login">登录流程</a>
+
+  <div class="sidebar-group-title">文本标注平台</div>
+  <a href="#text-layout">页面布局</a>
+  <a href="#text-project">项目配置</a>
+  <a href="#text-labels">标签配置</a>
+  <a href="#text-import">文本导入与切分</a>
+  <a href="#text-annotate">标注操作</a>
+  <a href="#text-shortcuts">快捷键参考</a>
+
+  <div class="sidebar-group-title">图像标注平台</div>
+  <a href="#img-layout">页面布局</a>
+  <a href="#img-project">项目配置</a>
+  <a href="#img-qa">问答标注</a>
+  <a href="#img-box">框选标注</a>
+  <a href="#img-export">导出功能</a>
+  <a href="#img-shortcuts">快捷键参考</a>
+
+  <div class="sidebar-group-title">附录</div>
+  <a href="#deploy">部署说明</a>
+</nav>
+
+<button class="back-to-top" onclick="window.scrollTo({top:0,behavior:'smooth'})" title="回到顶部">↑</button>
+
+<!-- ═══════════════ 主内容 ═══════════════ -->
+<main class="main">
+
+<!-- ── 封面 ── -->
+<div class="cover">
+  <h1>📘 LabelFast 操作手册</h1>
+  <p>文本命名实体识别 · 关系抽取 · 图像特征标注 一体化平台</p>
+  <div class="version">版本 v1 · 2026年6月</div>
+</div>
+
+<!-- ══════════ 第1章：系统概述 ══════════ -->
+<h2 id="overview">1. 系统概述</h2>
+
+<div class="card">
+  <div class="card-title"><span class="icon">🏗️</span> 系统架构</div>
+  <div class="figure">
+    <svg viewBox="0 0 880 340" style="max-width:100%;height:auto;">
+      <!-- 浏览器层 -->
+      <rect x="200" y="20" width="480" height="60" rx="10" fill="#EFF6FF" stroke="#3B82F6" stroke-width="2"/>
+      <text x="440" y="42" text-anchor="middle" font-size="14" font-weight="700" fill="#1E40AF">浏览器</text>
+      <text x="440" y="62" text-anchor="middle" font-size="12" fill="#64748B">文本标注平台 (React) · 图像标注平台 (Vue)</text>
+
+      <!-- 箭头 -->
+      <line x1="440" y1="80" x2="440" y2="115" stroke="#94A3B8" stroke-width="2" marker-end="url(#arrow-down)"/>
+
+      <!-- FastAPI 后端 -->
+      <rect x="200" y="115" width="480" height="60" rx="10" fill="#F0FDF4" stroke="#16A34A" stroke-width="2"/>
+      <text x="440" y="137" text-anchor="middle" font-size="14" font-weight="700" fill="#166534">FastAPI 后端服务</text>
+      <text x="440" y="157" text-anchor="middle" font-size="12" fill="#64748B">JWT 认证 · 项目管理 · 数据存储 · 文件服务</text>
+
+      <!-- 分叉箭头 -->
+      <line x1="300" y1="175" x2="300" y2="210" stroke="#94A3B8" stroke-width="2" marker-end="url(#arrow-down)"/>
+      <line x1="440" y1="175" x2="440" y2="210" stroke="#94A3B8" stroke-width="2" marker-end="url(#arrow-down)"/>
+      <line x1="580" y1="175" x2="580" y2="210" stroke="#94A3B8" stroke-width="2" marker-end="url(#arrow-down)"/>
+
+      <!-- 数据层 -->
+      <rect x="100" y="210" width="200" height="70" rx="10" fill="#FFF7ED" stroke="#F97316" stroke-width="2"/>
+      <text x="200" y="238" text-anchor="middle" font-size="13" font-weight="700" fill="#C2410C">文本标注存储</text>
+      <text x="200" y="258" text-anchor="middle" font-size="11" fill="#64748B">JSONL · JSON · SQLite</text>
+
+      <rect x="340" y="210" width="200" height="70" rx="10" fill="#FFF7ED" stroke="#F97316" stroke-width="2"/>
+      <text x="440" y="238" text-anchor="middle" font-size="13" font-weight="700" fill="#C2410C">图像标注存储</text>
+      <text x="440" y="258" text-anchor="middle" font-size="11" fill="#64748B">JSONL · 图片文件</text>
+
+      <rect x="580" y="210" width="200" height="70" rx="10" fill="#FFF7ED" stroke="#F97316" stroke-width="2"/>
+      <text x="680" y="238" text-anchor="middle" font-size="13" font-weight="700" fill="#C2410C">用户管理</text>
+      <text x="680" y="258" text-anchor="middle" font-size="11" fill="#64748B">users.xlsx</text>
+
+      <!-- 箭头定义 -->
+      <defs><marker id="arrow-down" markerWidth="8" markerHeight="8" refX="4" refY="7" orient="auto">
+        <path d="M0,0 L8,0 L4,8 Z" fill="#94A3B8"/></marker>
+      </defs>
+    </svg>
+    <div class="caption">图：LabelFast 系统整体架构</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-title"><span class="icon">🎯</span> 三大核心功能</div>
+  <div class="two-col">
+    <div>
+      <h4>📝 文本标注平台</h4>
+      <ul>
+        <li>命名实体识别（NER）标注</li>
+        <li>实体关系抽取（RE）标注</li>
+        <li>拖拽上传 TXT，自动切分</li>
+        <li>可视化关系连线（SVG 贝塞尔曲线）</li>
+        <li>JSON / JSONL / CSV 多格式导出</li>
+      </ul>
+    </div>
+    <div>
+      <h4>🖼️ 图像标注平台</h4>
+      <ul>
+        <li>问答标注：用户指令 → 助手回答</li>
+        <li>框选标注：图片上拖拽绘制矩形框</li>
+        <li>自定义标签列表，颜色自动分配</li>
+        <li>支持子目录递归扫描图片</li>
+        <li>一键打包导出 ZIP（标注+图片）</li>
+      </ul>
+    </div>
+  </div>
+  <div style="margin-top:16px;">
+    <h4>🔐 用户认证</h4>
+    <ul>
+      <li>JWT Token 认证机制</li>
+      <li>管理员通过 <code>backend/users.xlsx</code> 管理账号</li>
+      <li>不提供自助注册功能</li>
+    </ul>
+  </div>
+</div>
+
+
+<!-- ══════════ 第2章：登录流程 ══════════ -->
+<h2 id="login">2. 登录流程</h2>
+
+<div class="figure">
+  <svg viewBox="0 0 800 370" style="max-width:100%;height:auto;">
+    <!-- 左侧品牌面板 -->
+    <rect x="20" y="10" width="360" height="350" rx="12" fill="#1E40AF" opacity="0.08"/>
+    <text x="200" y="70" text-anchor="middle" font-size="16" font-weight="800" fill="#1E40AF">LabelFast</text>
+    <text x="200" y="95" text-anchor="middle" font-size="11" fill="#64748B">高效、精准的数据标注平台</text>
+    <!-- 品牌插图示意 -->
+    <rect x="120" y="120" width="50" height="90" rx="3" fill="#3B82F6" opacity=".3"/>
+    <rect x="180" y="100" width="50" height="110" rx="3" fill="#2563EB" opacity=".4"/>
+    <rect x="240" y="135" width="40" height="75" rx="3" fill="#60A5FA" opacity=".25"/>
+
+    <!-- 右侧表单面板 -->
+    <rect x="420" y="10" width="360" height="350" rx="12" fill="#fff" stroke="#E2E8F0" stroke-width="1"/>
+    <text x="475" y="55" font-size="16" font-weight="700" fill="#1E293B">欢迎登录</text>
+    <text x="475" y="75" font-size="12" fill="#94A3B8">请登录进入标注平台</text>
+
+    <!-- 提示行 -->
+    <rect x="440" y="95" width="320" height="30" rx="6" fill="#EFF6FF"/>
+    <text x="460" y="115" font-size="11" fill="#3B82F6">ℹ 账号由管理员在 backend/users.xlsx 中维护</text>
+
+    <!-- 输入框 -->
+    <rect x="440" y="140" width="320" height="36" rx="6" fill="#fff" stroke="#E2E8F0" stroke-width="1"/>
+    <text x="455" y="162" font-size="12" fill="#94A3B8">邮箱/手机号/用户名</text>
+
+    <rect x="440" y="186" width="320" height="36" rx="6" fill="#fff" stroke="#E2E8F0" stroke-width="1"/>
+    <text x="455" y="208" font-size="12" fill="#94A3B8">请输入密码</text>
+
+    <!-- 登录按钮 -->
+    <rect x="440" y="238" width="320" height="38" rx="6" fill="#1E40AF"/>
+    <text x="600" y="262" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">登 录</text>
+
+    <!-- 分隔线 -->
+    <line x1="420" y1="300" x2="780" y2="300" stroke="#E2E8F0" stroke-width="1"/>
+    <text x="475" y="325" font-size="11" fill="#94A3B8">隐私政策 · 用户协议 · 帮助中心 · © 2026 LabelFast</text>
+  </svg>
+  <div class="caption">图：登录页面布局</div>
+</div>
+
+<div class="steps">
+  <li><span><strong>打开浏览器</strong>，访问系统地址（如 <code>http://localhost:8000</code>）→ 自动跳转至登录页</span></li>
+  <li><span><strong>输入账号和密码</strong>（账号由管理员在 <code>backend/users.xlsx</code> 中预先配置）</span></li>
+  <li><span><strong>点击"登录"按钮</strong> → 验证通过后自动进入文本标注平台首页</span></li>
+  <li><span><strong>右上角可退出登录</strong>或切换到图像标注平台</span></li>
+</div>
+
+<div class="tip">
+  <strong>💡 提示：</strong>系统使用 JWT 令牌认证，令牌存储在 <kbd>sessionStorage</kbd> 中，关闭浏览器后需重新登录。
+</div>
+
+
+<!-- ══════════ 第3章：文本标注平台 ══════════ -->
+<h2 id="text-layout">3. 文本标注平台</h2>
+
+<h3 id="text-layout">3.1 页面布局总览</h3>
+
+<div class="figure">
+  <svg viewBox="0 0 880 440" style="max-width:100%;height:auto;">
+    <!-- Header -->
+    <rect x="0" y="0" width="880" height="44" fill="#fff" stroke="#E2E8F0" stroke-width="1"/>
+    <text x="16" y="28" font-size="13" font-weight="700" fill="#1E40AF">📝 LabelFast 文本标注</text>
+    <text x="780" y="28" font-size="11" fill="#64748B" text-anchor="middle">用户名 ▼</text>
+
+    <!-- 左侧栏背景 -->
+    <rect x="0" y="44" width="300" height="396" fill="#F8FAFC" stroke="#E2E8F0" stroke-width="0.5"/>
+
+    <!-- 模块1: 项目配置 -->
+    <text x="140" y="70" text-anchor="middle" font-size="12" font-weight="700" fill="#64748B">📋 项目配置</text>
+    <rect x="12" y="80" width="276" height="110" rx="6" fill="#fff" stroke="#E2E8F0" stroke-width="1"/>
+    <text x="24" y="100" font-size="10" fill="#94A3B8">选择已有项目 [下拉框 ▼]</text>
+    <text x="24" y="118" font-size="10" fill="#94A3B8">或新建项目 [输入框] [创建新项目 按钮]</text>
+    <text x="24" y="140" font-size="10" fill="#94A3B8">[当前项目状态提示]</text>
+    <rect x="24" y="152" width="125" height="24" rx="4" fill="#DC2626" opacity=".1"/>
+    <text x="86" y="170" text-anchor="middle" font-size="10" fill="#DC2626">清空数据</text>
+    <rect x="156" y="152" width="125" height="24" rx="4" fill="#DC2626" opacity=".1"/>
+    <text x="218" y="170" text-anchor="middle" font-size="10" fill="#DC2626">删除项目</text>
+
+    <!-- 模块2: 标签配置 -->
+    <text x="140" y="210" text-anchor="middle" font-size="12" font-weight="700" fill="#64748B">🏷️ 标签配置</text>
+    <rect x="12" y="220" width="276" height="72" rx="6" fill="#fff" stroke="#E2E8F0" stroke-width="1"/>
+    <text x="24" y="238" font-size="10" fill="#94A3B8">实体标签 [输入框: 人名, 地名, 组织]</text>
+    <text x="24" y="258" font-size="10" fill="#94A3B8">关系类型 [输入框: 位于, 属于, 担任]</text>
+    <text x="24" y="278" font-size="10" fill="#94A3B8">从 TXT 文件导入 [选择文件]</text>
+
+    <!-- 模块3: 待标注对象 -->
+    <text x="140" y="310" text-anchor="middle" font-size="12" font-weight="700" fill="#64748B">📄 待标注对象</text>
+    <rect x="12" y="320" width="276" height="110" rx="6" fill="#fff" stroke="#E2E8F0" stroke-width="1"/>
+    <text x="24" y="340" font-size="10" fill="#94A3B8">[拖拽 .txt 到此处]  [原文|段落|句子]</text>
+    <text x="24" y="360" font-size="10" fill="#94A3B8">1. 第一段文本内容...     ●</text>
+    <text x="24" y="376" font-size="10" fill="#94A3B8">2. 第二段文本内容...     ●</text>
+    <text x="24" y="392" font-size="10" fill="#94A3B8">3. 第三段文本内容...     ●</text>
+
+    <!-- 右侧工作区 -->
+    <!-- 工具栏 -->
+    <rect x="310" y="50" width="560" height="36" rx="6" fill="#fff" stroke="#E2E8F0" stroke-width="1"/>
+    <text x="326" y="74" font-size="11" fill="#64748B">[上一篇] [下一篇]  待标注对象 1/3  [删除当前]</text>
+    <text x="770" y="74" text-anchor="middle" font-size="11" fill="#64748B">[跳过] [保存] [保存并下一篇]</text>
+
+    <!-- 标签/关系快捷栏 -->
+    <rect x="310" y="92" width="560" height="70" rx="6" fill="#fff" stroke="#E2E8F0" stroke-width="1"/>
+    <text x="326" y="112" font-size="11" font-weight="700" fill="#64748B">实体标签 (快捷键 1-9)</text>
+    <text x="326" y="132" font-size="11">[1 人名] [2 地名] [3 组织]</text>
+    <text x="580" y="112" font-size="11" font-weight="700" fill="#64748B">关系类型 (快捷键 Ctrl+1-9)</text>
+    <text x="580" y="132" font-size="11">[1 位于] [2 属于] [3 担任]</text>
+
+    <!-- 标注区域 -->
+    <rect x="310" y="168" width="560" height="270" rx="6" fill="#FFFBEB" stroke="#F59E0B" stroke-width="1" stroke-dasharray="6,3"/>
+    <text x="590" y="200" text-anchor="middle" font-size="13" fill="#94A3B8">标注工作区</text>
+    <text x="590" y="220" text-anchor="middle" font-size="12" fill="#334155">在某航空结构件的制造过程中，加工任务由</text>
+    <!-- 高亮标注示例 -->
+    <rect x="460" y="208" width="80" height="16" rx="3" fill="#bae1ff"/>
+    <text x="460" y="220" font-size="12" fill="#1E40AF">机加车间</text>
+    <text x="590" y="240" text-anchor="middle" font-size="12" fill="#334155">负责实施。操作人员</text>
+    <rect x="540" y="228" width="50" height="16" rx="3" fill="#ffb3ba"/>
+    <text x="540" y="240" font-size="12" fill="#DC2626">张伟</text>
+    <text x="590" y="260" text-anchor="middle" font-size="12" fill="#334155">依据工艺规程文件，对零件进行了核对...</text>
+    <!-- 关系连线 -->
+    <path d="M 500 216 C 520 190, 550 190, 565 236" stroke="#9c27b0" fill="none" stroke-width="2"/>
+    <circle cx="520" cy="195" r="2" fill="#9c27b0"/>
+    <text x="520" y="192" font-size="9" fill="#9c27b0" text-anchor="middle">位于</text>
+  </svg>
+  <div class="caption">图：文本标注平台页面布局</div>
+</div>
+
+<!-- ── 项目配置 ── -->
+<h3 id="text-project">3.2 项目配置模块</h3>
+
+<div class="card">
+  <table>
+    <tr><th>操作</th><th>说明</th></tr>
+    <tr>
+      <td><span class="btn-demo sm">选择已有项目 ▼</span></td>
+      <td>下拉框列出所有已创建项目，选中即可加载。加载后自动同步项目数据、标签和待标注文档。</td>
+    </tr>
+    <tr>
+      <td><span class="btn-demo primary sm">创建新项目</span></td>
+      <td>在输入框中填写项目名称，点击创建。新项目会分配唯一的 UUID，并自动创建项目目录结构。</td>
+    </tr>
+    <tr>
+      <td><span class="btn-demo primary sm">保存</span></td>
+      <td>将当前项目的所有数据（标签配置、文档、标注结果）全部保存到后端。保存后文档 ID 会与后端同步。</td>
+    </tr>
+    <tr>
+      <td><span class="btn-demo accent sm">打包导出</span></td>
+      <td>一键导出整个项目为 ZIP 压缩包，包含 JSON、JSONL、CSV 三种格式（参见 3.6 导出）。</td>
+    </tr>
+    <tr>
+      <td><span class="btn-demo danger sm">清空数据</span></td>
+      <td>清空项目的标签配置和所有待标注对象。<strong>此操作不可撤销</strong>，系统会弹出确认框。</td>
+    </tr>
+    <tr>
+      <td><span class="btn-demo danger sm">删除项目</span></td>
+      <td>彻底删除项目及其所有数据。<strong>此操作不可恢复</strong>，系统会弹出二次确认。</td>
+    </tr>
+  </table>
+</div>
+
+
+<!-- ── 标签配置 ── -->
+<h3 id="text-labels">3.3 标签配置模块</h3>
+
+<div class="card">
+  <div class="card-title"><span class="icon">🏷️</span> 配置实体标签与关系类型</div>
+
+  <h4>实体标签（Entity Labels）</h4>
+  <p>在"实体标签"输入框中填入标签名，多个标签用 <strong>逗号、分号</strong> 分隔。</p>
+  <div class="figure">
+    <svg viewBox="0 0 620 90" style="max-width:100%;height:auto;">
+      <rect x="0" y="0" width="620" height="90" rx="8" fill="#fff" stroke="#E2E8F0" stroke-width="1"/>
+      <text x="20" y="24" font-size="12" font-weight="700" fill="#64748B">实体标签</text>
+      <rect x="20" y="34" width="580" height="28" rx="5" fill="#F8FAFC" stroke="#CBD5E1" stroke-width="1"/>
+      <text x="32" y="52" font-size="12" fill="#334155">人名, 地名, 组织, 时间, 工艺方法, 材料</text>
+
+      <text x="20" y="80" font-size="11" fill="#94A3B8">← 每个标签在标注时对应一个彩色芯片，选中文本后按数字键 1-9 或点击标签名即可标注</text>
+    </svg>
+  </div>
+
+  <h4>关系类型（Relation Types）</h4>
+  <p>在"关系类型"输入框中填入关系名，多个类型用 <strong>逗号、分号</strong> 分隔。</p>
+  <div class="figure">
+    <svg viewBox="0 0 620 90" style="max-width:100%;height:auto;">
+      <rect x="0" y="0" width="620" height="90" rx="8" fill="#fff" stroke="#E2E8F0" stroke-width="1"/>
+      <text x="20" y="24" font-size="12" font-weight="700" fill="#64748B">关系类型</text>
+      <rect x="20" y="34" width="580" height="28" rx="5" fill="#F8FAFC" stroke="#CBD5E1" stroke-width="1"/>
+      <text x="32" y="52" font-size="12" fill="#334155">位于, 属于, 担任, 加工, 检测</text>
+      <text x="20" y="80" font-size="11" fill="#94A3B8">← 关系用于连接两个已标注实体，在 SVG 标注区绘制贝塞尔曲线箭头</text>
+    </svg>
+  </div>
+
+  <div class="tip">
+    <strong>💡 批量导入标签/关系：</strong>点击"从 TXT 文件导入"，选择一个 <code>.txt</code> 文件。文件格式支持 <code>LABELS:</code> 和 <code>RELATIONS:</code> 标题行来自动分类。
+  </div>
+</div>
+
+
+<!-- ── 文本导入 ── -->
+<h3 id="text-import">3.4 文本导入与切分</h3>
+
+<div class="card">
+  <div class="card-title"><span class="icon">📥</span> 三种切分模式</div>
+
+  <table>
+    <tr><th>模式</th><th>行为</th><th>生成标注对象数</th><th>适用场景</th></tr>
+    <tr>
+      <td><span class="btn-demo sm">原文</span></td>
+      <td>整篇不切分，全文作为 1 条标注对象</td>
+      <td>1</td>
+      <td>短文本、完整文档分析、整体情感分析</td>
+    </tr>
+    <tr>
+      <td><span class="btn-demo sm">段落</span></td>
+      <td>按空行分段，每段作为 1 条标注对象</td>
+      <td>3~10</td>
+      <td>段落主题提取、分段情感分析、内容结构化</td>
+    </tr>
+    <tr>
+      <td><span class="btn-demo sm">句子</span></td>
+      <td>按句末标点（。；！？!?;）切分，每句 1 条</td>
+      <td>10+</td>
+      <td>句子级实体识别、语法分析、细粒度标注</td>
+    </tr>
+  </table>
+
+  <h4>导入方式</h4>
+  <div class="steps">
+    <li><span><strong>拖拽 .txt 文件</strong>到"待标注对象"模块的拖拽区域</span></li>
+    <li><span><strong>点击"选择文件"</strong>按钮，从文件管理器中选择 <code>.txt</code> 文件（支持多选）</span></li>
+    <li><span>系统自动检测编码（UTF-8 / GBK / UTF-16），导入后按当前选中的切分模式拆分</span></li>
+  </div>
+
+  <div class="tip">
+    <strong>💡 提示：</strong>可以多次导入不同文件，所有文本都会追加到当前项目的待标注列表中。单文件大小限制 10MB。
+  </div>
+</div>
+
+
+<!-- ── 标注操作 ── -->
+<h3 id="text-annotate">3.5 标注操作</h3>
+
+<div class="card">
+  <div class="card-title"><span class="icon">✏️</span> 实体标注（NER）</div>
+  <div class="steps">
+    <li><span><strong>用鼠标划选</strong>标注工作区中的文本片段</span></li>
+    <li><span>弹出<strong>标签选择弹窗</strong>，点击标签名（或按数字键 <kbd>1</kbd>-<kbd>9</kbd>）</span></li>
+    <li><span>被选中的文本会覆盖一层<strong>半透明彩色底纹</strong>，颜色由标签决定</span></li>
+  </div>
+
+  <div class="figure">
+    <svg viewBox="0 0 560 100" style="max-width:100%;height:auto;">
+      <rect x="0" y="0" width="560" height="100" rx="8" fill="#fff" stroke="#E2E8F0" stroke-width="1"/>
+      <text x="20" y="28" font-size="13" fill="#334155">在某航空结构件的制造过程中，加工任务由</text>
+      <rect x="270" y="14" width="80" height="18" rx="3" fill="#bae1ff" fill-opacity="0.6"/>
+      <text x="270" y="28" font-size="13" fill="#1E40AF" font-weight="600">机加车间</text>
+      <text x="355" y="28" font-size="13" fill="#334155">负责实施。</text>
+
+      <text x="20" y="52" font-size="13" fill="#334155">操作人员</text>
+      <rect x="90" y="38" width="40" height="18" rx="3" fill="#ffb3ba" fill-opacity="0.6"/>
+      <text x="90" y="52" font-size="13" fill="#DC2626" font-weight="600">张伟</text>
+      <text x="136" y="52" font-size="13" fill="#334155">依据工艺规程文件，对零件图纸和</text>
+
+      <text x="20" y="76" font-size="13" fill="#334155">技术要求进行了详细核对，确认该零件材料为</text>
+      <rect x="310" y="62" width="120" height="18" rx="3" fill="#baffc9" fill-opacity="0.6"/>
+      <text x="310" y="76" font-size="12" fill="#16A34A" font-weight="600">7075-T6 铝合金</text>
+
+      <!-- 关系连线示意 -->
+      <path d="M 110 56 C 200 20, 260 20, 310 76" stroke="#9c27b0" fill="none" stroke-width="2" marker-end="url(#arrow-purple)"/>
+      <text x="210" y="16" font-size="9" fill="#9c27b0" text-anchor="middle">担任</text>
+      <defs><marker id="arrow-purple" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+        <path d="M0,0 L6,3 L0,6 Z" fill="#9c27b0"/></marker>
+      </defs>
+    </svg>
+    <div class="caption">图：实体标注效果示意 —— 彩色底纹标识实体，"担任"关系连线连接"张伟"和"机加车间"</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-title"><span class="icon">🔗</span> 关系标注（Relation Extraction）</div>
+  <p>关系标注用于连接两个已标注的实体，表达它们之间的语义关系。</p>
+  <div class="steps">
+    <li><span><strong>拖拽连线：</strong>鼠标按住一个已标注实体 → 拖动到另一个实体上松开</span></li>
+    <li><span><strong>点击连线：</strong>先点击实体 A 选中（蓝色描边）→ 再点击实体 B → 弹出关系选择弹窗</span></li>
+    <li><span><strong>右键循环选中：</strong>右键点击重叠区域，循环切换已标注实体</span></li>
+    <li><span><strong>删除关系：</strong>鼠标悬停在关系线上，线条高亮，点击关系线可修改或删除</span></li>
+  </div>
+
+  <div class="figure">
+    <svg viewBox="0 0 500 140" style="max-width:100%;height:auto;">
+      <rect x="0" y="0" width="500" height="140" rx="8" fill="#fff" stroke="#E2E8F0" stroke-width="1"/>
+      <text x="60" y="80" font-size="13" fill="#334155">操作人员</text>
+      <!-- 实体A -->
+      <rect x="130" y="40" width="60" height="22" rx="4" fill="#ffb3ba" fill-opacity="0.6" stroke="#DC2626" stroke-width="2"/>
+      <text x="160" y="56" font-size="13" fill="#DC2626" text-anchor="middle" font-weight="600">张伟</text>
+      <!-- 实体B -->
+      <rect x="310" y="40" width="100" height="22" rx="4" fill="#bae1ff" fill-opacity="0.6" stroke="#1E40AF" stroke-width="2"/>
+      <text x="360" y="56" font-size="13" fill="#1E40AF" text-anchor="middle" font-weight="600">机加车间</text>
+      <!-- 关系弧线 -->
+      <path d="M 190 50 C 250 10, 310 10, 310 50" stroke="#9c27b0" fill="none" stroke-width="2.5" marker-end="url(#arrow-rel)"/>
+      <text x="250" y="26" font-size="11" fill="#9c27b0" text-anchor="middle" font-weight="600">位于</text>
+      <!-- 弹窗示意 -->
+      <rect x="200" y="80" width="100" height="50" rx="6" fill="#fff" stroke="#E2E8F0" stroke-width="1.5" opacity=".95"/>
+      <text x="250" y="100" text-anchor="middle" font-size="10" font-weight="600" fill="#64748B">选择关系</text>
+      <rect x="212" y="108" width="36" height="16" rx="4" fill="#9c27b0"/>
+      <text x="230" y="120" text-anchor="middle" font-size="9" fill="#fff">位于</text>
+      <rect x="254" y="108" width="36" height="16" rx="4" fill="#3f51b5"/>
+      <text x="272" y="120" text-anchor="middle" font-size="9" fill="#fff">属于</text>
+      <defs><marker id="arrow-rel" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+        <path d="M0,0 L6,3 L0,6 Z" fill="#9c27b0"/></marker>
+      </defs>
+    </svg>
+    <div class="caption">图：拖拽连线创建关系。蓝色描边表示被选中的实体，紫色弧形连线表示关系</div>
+  </div>
+</div>
+
+
+<!-- ── 快捷键 ── -->
+<h3 id="text-shortcuts">3.6 文本标注快捷键</h3>
+
+<div class="card">
+  <table class="shortcut-table">
+    <tr><th>快捷键</th><th>功能</th></tr>
+    <tr><td><kbd>1</kbd> - <kbd>9</kbd></td><td>选中文本后，快速选择第 1~9 个实体标签</td></tr>
+    <tr><td><kbd>Ctrl</kbd> + <kbd>1</kbd>-<kbd>9</kbd></td><td>在关系选择弹窗中，快速选择第 1~9 个关系类型</td></tr>
+    <tr><td><kbd>Space</kbd></td><td>保存当前标注并跳到下一篇（等同"保存并下一篇"按钮）</td></tr>
+    <tr><td><kbd>←</kbd> / <kbd>→</kbd></td><td>切换上一篇 / 下一篇待标注对象</td></tr>
+    <tr><td><kbd>Delete</kbd></td><td>删除当前选中的标注（实体或关系）</td></tr>
+    <tr><td><kbd>Esc</kbd></td><td>关闭弹窗 / 取消选中 / 退出设置面板</td></tr>
+    <tr><td><kbd>Ctrl</kbd> + <kbd>Z</kbd></td><td>撤销上一次操作（实体标注 / 关系标注）</td></tr>
+  </table>
+</div>
+
+
+<!-- ══════════ 第4章：图像标注平台 ══════════ -->
+<h2 id="img-layout">4. 图像标注平台</h2>
+
+<p>图像标注平台通过 <strong>右上角"图像标注"按钮</strong>从文本标注平台跳转进入，也支持直接访问 <code>/minimind/</code> 路径。</p>
+
+<h3 id="img-layout">4.1 页面布局总览</h3>
+
+<div class="figure">
+  <svg viewBox="0 0 880 410" style="max-width:100%;height:auto;">
+    <!-- Header -->
+    <rect x="0" y="0" width="880" height="44" fill="#fff" stroke="#E2E8F0" stroke-width="1"/>
+    <text x="16" y="28" font-size="13" font-weight="700" fill="#1E40AF">🖼️ 图像类标注平台</text>
+    <text x="780" y="28" font-size="11" fill="#64748B" text-anchor="middle">已标注 3/10</text>
+
+    <!-- 左侧栏 -->
+    <rect x="0" y="44" width="260" height="366" fill="#F8FAFC" stroke="#E2E8F0" stroke-width="0.5"/>
+    <text x="130" y="68" text-anchor="middle" font-size="12" font-weight="700" fill="#64748B">📋 项目配置</text>
+    <rect x="10" y="82" width="240" height="82" rx="6" fill="#fff" stroke="#E2E8F0" stroke-width="1"/>
+    <text x="20" y="100" font-size="10" fill="#94A3B8">历史项目 [选择已有项目 ▼]</text>
+    <text x="20" y="118" font-size="10" fill="#94A3B8">新建项目 [名称] [新建项目]</text>
+    <text x="20" y="136" font-size="10" fill="#94A3B8">图片位置: projects/xxx/images</text>
+    <text x="20" y="152" font-size="10" fill="#94A3B8">[保存当前项目] [删除项目]</text>
+
+    <text x="130" y="185" text-anchor="middle" font-size="12" font-weight="700" fill="#64748B">图片列表 (10)</text>
+    <rect x="10" y="195" width="240" height="200" rx="6" fill="#fff" stroke="#E2E8F0" stroke-width="1"/>
+    <text x="20" y="215" font-size="10" fill="#64748B">1. photo_001.png   ✓</text>
+    <text x="20" y="232" font-size="10" fill="#64748B">2. photo_002.png   ✓</text>
+    <text x="20" y="249" font-size="10" fill="#64748B">3. photo_003.png   ✓</text>
+    <text x="20" y="266" font-size="10" fill="#334155" font-weight="600">4. photo_004.png   ◯</text>
+    <text x="20" y="283" font-size="10" fill="#94A3B8">5. photo_005.png   ◯</text>
+    <text x="20" y="300" font-size="10" fill="#94A3B8">...</text>
+
+    <!-- 中间图片区域 -->
+    <rect x="270" y="50" width="350" height="320" rx="8" fill="#FFFBEB" stroke="#E2E8F0" stroke-width="1"/>
+    <text x="445" y="210" text-anchor="middle" font-size="14" fill="#94A3B8">🖼️ 图片预览区域</text>
+    <text x="445" y="230" text-anchor="middle" font-size="11" fill="#94A3B8">当前图片: photo_004.png</text>
+    <!-- 模拟框标注 -->
+    <rect x="320" y="120" width="80" height="60" rx="2" fill="#ef4444" fill-opacity="0.15" stroke="#ef4444" stroke-width="2.5"/>
+    <rect x="420" y="200" width="60" height="45" rx="2" fill="#6366f1" fill-opacity="0.15" stroke="#6366f1" stroke-width="2.5"/>
+
+    <!-- 右侧面板 -->
+    <rect x="630" y="50" width="240" height="350" rx="6" fill="#fff" stroke="#E2E8F0" stroke-width="1"/>
+    <!-- 模式切换 -->
+    <rect x="640" y="60" width="220" height="30" rx="6" fill="#F1F5F9"/>
+    <rect x="642" y="62" width="107" height="26" rx="5" fill="#fff" stroke="#E2E8F0" stroke-width="1"/>
+    <text x="695" y="80" text-anchor="middle" font-size="11" font-weight="600" fill="#1E40AF">💬 问答标注</text>
+    <text x="760" y="80" text-anchor="middle" font-size="11" fill="#94A3B8">框选标注</text>
+
+    <!-- QA 表单 -->
+    <text x="645" y="108" font-size="11" font-weight="700" fill="#64748B">User Input</text>
+    <rect x="640" y="114" width="220" height="50" rx="5" fill="#F8FAFC" stroke="#E2E8F0" stroke-width="1"/>
+    <text x="650" y="134" font-size="10" fill="#94A3B8">例如: 描述这张图片...</text>
+
+    <text x="645" y="182" font-size="11" font-weight="700" fill="#64748B">Assistant Output</text>
+    <rect x="640" y="188" width="220" height="80" rx="5" fill="#F8FAFC" stroke="#E2E8F0" stroke-width="1"/>
+    <text x="650" y="210" font-size="10" fill="#94A3B8">模型预期的回答...</text>
+
+    <!-- 按钮 -->
+    <rect x="640" y="285" width="110" height="34" rx="6" fill="#1E40AF"/>
+    <text x="695" y="307" text-anchor="middle" font-size="11" font-weight="600" fill="#fff">保存并下一张</text>
+    <rect x="755" y="285" width="105" height="34" rx="6" fill="#fff" stroke="#E2E8F0" stroke-width="1"/>
+    <text x="807" y="307" text-anchor="middle" font-size="11" fill="#64748B">跳过</text>
+    <rect x="640" y="326" width="220" height="30" rx="6" fill="#F59E0B"/>
+    <text x="750" y="346" text-anchor="middle" font-size="11" font-weight="600" fill="#1E293B">📦 打包导出问答标注</text>
+
+    <!-- 底部翻页 -->
+    <text x="270" y="395" font-size="11" fill="#64748B">[上一张] ← photo_004.png → [下一张]</text>
+  </svg>
+  <div class="caption">图：图像标注平台页面布局（问答标注模式）</div>
+</div>
+
+
+<!-- ── 项目配置 ── -->
+<h3 id="img-project">4.2 项目配置模块</h3>
+
+<div class="card">
+  <table>
+    <tr><th>操作</th><th>说明</th></tr>
+    <tr>
+      <td><span class="btn-demo sm">选择已有项目 ▼</span></td>
+      <td>从下拉框选择已创建的项目。切换项目时会自动保存当前项目的标注数据。</td>
+    </tr>
+    <tr>
+      <td><span class="btn-demo primary sm">新建项目</span></td>
+      <td>输入项目名称后点击创建。系统会自动创建 <code>projects/项目名/images/</code> 目录结构。</td>
+    </tr>
+    <tr>
+      <td>📁 图片存放位置</td>
+      <td>新建项目后，需将待标注的图片放入 <code>projects/项目名/images/</code> 文件夹中。支持子目录递归扫描。</td>
+    </tr>
+    <tr>
+      <td>💾 标注结果保存位置</td>
+      <td>问答和框选标注结果自动保存到 <code>projects/项目名/</code> 文件夹下的 <code>标注结果_qa.jsonl</code> 和 <code>标注结果_boxes.jsonl</code>。</td>
+    </tr>
+    <tr>
+      <td><span class="btn-demo primary sm">保存当前项目</span></td>
+      <td>保存项目标签列表和所有标注数据（问答 + 框选）到后端。</td>
+    </tr>
+    <tr>
+      <td><span class="btn-demo danger sm">删除项目</span></td>
+      <td>删除项目及其所有标注数据和目录。<strong>不可恢复</strong>。</td>
+    </tr>
+  </table>
+</div>
+
+
+<!-- ── 问答标注 ── -->
+<h3 id="img-qa">4.3 问答标注模式</h3>
+
+<div class="card">
+  <div class="card-title"><span class="icon">💬</span> 问答标注操作流程</div>
+  <p>问答标注适用于 <strong>视觉问答（VQA）</strong>、<strong>图像描述生成</strong> 等 AI 训练场景。每条标注记录包含「用户指令」和「助手回答」两部分。</p>
+
+  <div class="steps">
+    <li><span><strong>切换到问答标注模式</strong>（点击右侧面板顶部的"问答标注"标签）</span></li>
+    <li><span>在左侧图片列表中选择一张图片（或使用翻页按钮）</span></li>
+    <li><span>在 <strong>User Input（用户指令）</strong> 文本框中输入问题或指令。系统默认填入"详细描述这张图片。"</span></li>
+    <li><span>在 <strong>Assistant Output（助手回答）</strong> 文本框中输入模型期望的标注回答</span></li>
+    <li><span>点击 <strong>"保存并下一张"</strong> 按钮（或按 <kbd>Ctrl+Enter</kbd>）</span></li>
+  </div>
+
+  <div class="tip">
+    <strong>💡 提示：</strong>User Input 中会自动附加 <code>&lt;image&gt;</code> 标记到末尾，用于标识该对话关联图片。无需手动添加。
+  </div>
+
+  <div class="figure">
+    <svg viewBox="0 0 520 220" style="max-width:100%;height:auto;">
+      <rect x="0" y="0" width="520" height="220" rx="10" fill="#fff" stroke="#E2E8F0" stroke-width="1"/>
+      <text x="20" y="28" font-size="12" font-weight="700" fill="#64748B">User Input (用户指令)</text>
+      <rect x="20" y="36" width="480" height="50" rx="6" fill="#F8FAFC" stroke="#E2E8F0" stroke-width="1"/>
+      <text x="35" y="58" font-size="12" fill="#334155">请描述这张图片中的物体和它们的空间位置关系。</text>
+
+      <text x="20" y="108" font-size="12" font-weight="700" fill="#64748B">Assistant Output (助手回答)</text>
+      <rect x="20" y="116" width="480" height="70" rx="6" fill="#F0FDF4" stroke="#16A34A" stroke-width="1" stroke-dasharray="4,2"/>
+      <text x="35" y="138" font-size="12" fill="#166534">图中有一张木制桌子，桌子上放置了一台笔记本电脑、一个蓝色咖啡杯</text>
+      <text x="35" y="156" font-size="12" fill="#166534">和一部智能手机。笔记本屏幕朝前，位于桌子中央；咖啡杯在笔记本</text>
+      <text x="35" y="174" font-size="12" fill="#166534">右侧；手机放在键盘下方。</text>
+    </svg>
+    <div class="caption">图：问答标注示例 —— 用户指令 + 助手回答</div>
+  </div>
+</div>
+
+
+<!-- ── 框选标注 ── -->
+<h3 id="img-box">4.4 框选标注模式</h3>
+
+<div class="card">
+  <div class="card-title"><span class="icon">📦</span> 框选标注操作流程</div>
+  <p>框选标注（Bounding Box Labeling）适用于<strong>目标检测</strong>、<strong>物体定位</strong>等计算机视觉训练场景。</p>
+
+  <div class="steps">
+    <li><span><strong>切换到框选标注模式</strong>（点击右侧面板顶部的"框选标注"标签）</span></li>
+    <li>
+      <span><strong>定义标签列表</strong>：在标签输入框中输入标签名，按 <kbd>Enter</kbd> 添加。
+      <div style="margin-top:8px;">
+        <span class="chip red" style="margin-right:6px;">1 人物</span>
+        <span class="chip blue" style="margin-right:6px;">2 车辆</span>
+        <span class="chip green" style="margin-right:6px;">3 建筑</span>
+        <span class="chip yellow" style="margin-right:6px;">4 标志</span>
+      </div>
+      </span>
+    </li>
+    <li><span><strong>选择一个当前标签</strong>（点击标签芯片选中，或按数字键 <kbd>0</kbd>-<kbd>9</kbd> 快速选择）</span></li>
+    <li><span><strong>点击"开始框选标注"按钮</strong>进入绘制模式</span></li>
+    <li><span><strong>在图片上按住鼠标左键并拖拽</strong>，创建矩形标注框</span></li>
+    <li><span>松开鼠标确认框选，点击 <strong>"保存当前图片框标注"</strong>（或按 <kbd>空格键</kbd>）</span></li>
+  </ol>
+
+  <div class="figure">
+    <svg viewBox="0 0 520 260" style="max-width:100%;height:auto;">
+      <rect x="0" y="0" width="520" height="260" rx="10" fill="#fff" stroke="#E2E8F0" stroke-width="1"/>
+      <!-- 图片区域示意 -->
+      <rect x="40" y="20" width="280" height="210" rx="8" fill="#F8FAFC" stroke="#E2E8F0" stroke-width="1"/>
+      <text x="180" y="130" text-anchor="middle" font-size="13" fill="#94A3B8">🖼️ 图片</text>
+      <!-- 框标注 -->
+      <rect x="70" y="50" width="100" height="70" rx="3" fill="#ef4444" fill-opacity="0.12" stroke="#ef4444" stroke-width="2.5"/>
+      <!-- 角点 -->
+      <circle cx="68" cy="48" r="3" fill="#ef4444"/>
+      <circle cx="172" cy="48" r="3" fill="#ef4444"/>
+      <circle cx="68" cy="122" r="3" fill="#ef4444"/>
+      <circle cx="172" cy="122" r="3" fill="#ef4444"/>
+
+      <rect x="190" y="140" width="80" height="60" rx="3" fill="#6366f1" fill-opacity="0.12" stroke="#6366f1" stroke-width="2.5"/>
+      <circle cx="188" cy="138" r="3" fill="#6366f1"/>
+      <circle cx="272" cy="138" r="3" fill="#6366f1"/>
+      <circle cx="188" cy="202" r="3" fill="#6366f1"/>
+      <circle cx="272" cy="202" r="3" fill="#6366f1"/>
+
+      <!-- 右侧信息 -->
+      <text x="340" y="45" font-size="11" font-weight="700" fill="#64748B">框标注列表</text>
+      <text x="340" y="70" font-size="10" fill="#ef4444">■ 人物 [45,30]-[145,100]</text>
+      <text x="340" y="90" font-size="10" fill="#6366f1">■ 车辆 [130,100]-[210,160]</text>
+      <text x="340" y="120" font-size="10" fill="#94A3B8">□ (空槽位)</text>
+
+      <rect x="340" y="140" width="155" height="28" rx="6" fill="#1E40AF"/>
+      <text x="417" y="158" text-anchor="middle" font-size="10" font-weight="600" fill="#fff">保存当前图片框标注</text>
+    </svg>
+    <div class="caption">图：框选标注效果示意 —— 红色框标注"人物"，紫色框标注"车辆"</div>
+  </div>
+</div>
+
+
+<!-- ── 导出 ── -->
+<h3 id="img-export">4.5 导出功能</h3>
+
+<div class="card">
+  <div class="card-title"><span class="icon">📦</span> 数据导出</div>
+
+  <h4>图像标注平台 — 打包导出 ZIP</h4>
+  <p>图像标注平台支持三种导出模式，均以 ZIP 压缩包形式下载：</p>
+  <table>
+    <tr><th>导出按钮</th><th>模式</th><th>包含内容</th></tr>
+    <tr><td><span class="btn-demo accent sm">📦 打包导出问答标注</span></td><td>qa</td><td>问答标注 JSONL + 已标注图片</td></tr>
+    <tr><td><span class="btn-demo accent sm">📦 打包导出框选标注</span></td><td>box</td><td>框选标注 JSONL + 已标注图片</td></tr>
+    <tr><td>— (通过 API 调用)</td><td>all</td><td>问答 + 框选标注 JSONL + 已标注图片 + README</td></tr>
+  </table>
+
+  <h4>文本标注平台 — 打包导出 ZIP</h4>
+  <p>点击<span class="btn-demo accent sm">打包导出</span>按钮，一次性导出包含 <strong>JSON、JSONL、CSV</strong> 三种格式的 ZIP 压缩包。</p>
+
+  <div class="tip">
+    <strong>💡 提示：</strong>导出时 ZIP 文件名包含项目名称和时间戳，方便追溯。导出包内包含 <code>README.txt</code> 记录标注数量统计。
+  </div>
+</div>
+
+
+<!-- ── 图像快捷键 ── -->
+<h3 id="img-shortcuts">4.6 图像标注快捷键</h3>
+
+<div class="card">
+  <table class="shortcut-table">
+    <tr><th>快捷键</th><th>模式</th><th>功能</th></tr>
+    <tr><td><kbd>0</kbd> - <kbd>9</kbd></td><td>框选模式</td><td>快速选择第 1~10 个标签（<kbd>0</kbd> = 第 10 个）</td></tr>
+    <tr><td><kbd>Space</kbd></td><td>通用</td><td>QA 模式：保存并下一张 / 框选模式：保存框标注</td></tr>
+    <tr><td><kbd>Ctrl</kbd> + <kbd>Enter</kbd></td><td>QA 模式</td><td>保存并下一张</td></tr>
+    <tr><td><kbd>A</kbd></td><td>通用</td><td>上一张图片</td></tr>
+    <tr><td><kbd>D</kbd></td><td>通用</td><td>下一张图片</td></tr>
+    <tr><td><kbd>Esc</kbd></td><td>框选模式</td><td>取消当前绘制 / 退出框选模式</td></tr>
+    <tr><td><kbd>Enter</kbd></td><td>框选模式</td><td>添加标签（在标签输入框中）</td></tr>
+  </table>
+</div>
+
+
+<!-- ══════════ 第5章：附录 ══════════ -->
+<h2 id="deploy">5. 附录：部署说明</h2>
+
+<div class="card">
+  <div class="card-title"><span class="icon">🚀</span> 快速启动</div>
+
+  <h4>启动后端</h4>
+  <pre style="background:#1E293B;color:#E2E8F0;padding:16px;border-radius:8px;overflow-x:auto;font-size:13px;"><code>cd backend
+pip install -r requirements.txt
+python server.py</code></pre>
+  <p style="margin-top:8px;">后端默认启动在 <code>http://localhost:8000</code>（端口自动检测，若占用则递增）。</p>
+
+  <h4>启动前端</h4>
+  <pre style="background:#1E293B;color:#E2E8F0;padding:16px;border-radius:8px;overflow-x:auto;font-size:13px;"><code>cd frontend
+npm install
+npm run dev</code></pre>
+  <p style="margin-top:8px;">前端开发服务器启动后，访问终端输出的本地地址即可。生产环境下，前端构建后的 <code>dist/</code> 目录由 FastAPI 后端统一托管。</p>
+
+  <h4>账号管理</h4>
+  <ul>
+    <li>管理员维护 <code>backend/users.xlsx</code> 文件</li>
+    <li>修改后重启后端服务生效</li>
+    <li>系统不提供自助注册功能</li>
+  </ul>
+</div>
+
+<div class="card">
+  <div class="card-title"><span class="icon">🐳</span> Docker 部署（离线环境）</div>
+  <ol>
+    <li>将 <code>multi-view-ontology-tool.tar</code> 和 <code>docker-compose.offline.yml</code> 拷贝到服务器</li>
+    <li>加载镜像：<code>docker load -i multi-view-ontology-tool.tar</code></li>
+    <li>启动服务：<code>docker-compose -f docker-compose.offline.yml up -d</code></li>
+    <li>访问 <code>http://服务器IP:3001</code></li>
+  </ol>
+  <div class="tip">
+    <strong>💡 注意：</strong>离线部署时，需要确保 compose 文件中的端口号（默认 3001）、volumes 路径和 <code>:z</code> SELinux 标签正确配置。详见 <code>Docker打包规范.md</code>。
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-title"><span class="icon">🔧</span> 技术栈</div>
+  <table>
+    <tr><th>层级</th><th>技术</th></tr>
+    <tr><td>前端（文本标注）</td><td>React + TypeScript + Vite</td></tr>
+    <tr><td>前端（图像标注）</td><td>Vue 3 (CDN) + Tailwind CSS (CDN)</td></tr>
+    <tr><td>后端</td><td>Python FastAPI + JWT 认证</td></tr>
+    <tr><td>数据存储</td><td>JSON / JSONL 文件 + SQLite</td></tr>
+    <tr><td>容器化</td><td>Docker + docker-compose (v1.17.1)</td></tr>
+  </table>
+</div>
+
+<!-- ── 页脚 ── -->
+<div style="text-align:center;padding:40px 0 20px;color:#94A3B8;font-size:13px;border-top:1px solid var(--border);margin-top:40px;">
+  <p>LabelFast 操作手册 · 版本 v1 · 2026 年 6 月</p>
+  <p>如需帮助，请联系系统管理员</p>
+</div>
+
+</main>
+</body>
+</html>

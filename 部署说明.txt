@@ -1,0 +1,56 @@
+LabelFast 离线部署说明
+========================
+
+适用环境：RHEL 7.6 (Maipo) / x86_64 / Docker 20.10+ / docker-compose 1.17.1+
+
+前提条件
+--------
+- 操作系统已安装 Docker 20.10.9+ 和 docker-compose 1.17.1+
+- 端口 3002 未被占用
+- SELinux 保持 Enforcing（volumes 已配置 :z 标签）
+
+部署步骤
+--------
+
+1. 将部署包解压到目标目录
+   unzip label-fast-deploy.zip -d /opt/label-fast
+   cd /opt/label-fast
+
+2. 加载 Docker 镜像
+   docker load -i label-fast.tar
+
+3. 确认镜像已加载
+   docker images | grep label-fast
+
+4. 启动服务
+   docker-compose -f docker-compose.offline.yml up -d
+
+5. 检查服务状态
+   docker-compose -f docker-compose.offline.yml ps
+   docker-compose -f docker-compose.offline.yml logs label-fast
+
+6. 访问系统
+   浏览器打开：http://<服务器IP>:3002
+
+   默认账号由管理员在 backend/users.xlsx 中维护。
+   修改 users.xlsx 后重启容器生效：
+   docker-compose -f docker-compose.offline.yml restart
+
+常用命令
+--------
+- 查看日志：docker-compose -f docker-compose.offline.yml logs -f label-fast
+- 重启服务：docker-compose -f docker-compose.offline.yml restart
+- 停止服务：docker-compose -f docker-compose.offline.yml down
+- 更新镜像后重新部署：
+  docker-compose -f docker-compose.offline.yml down
+  docker load -i label-fast.tar
+  docker-compose -f docker-compose.offline.yml up -d
+
+数据持久化
+----------
+以下目录/文件通过 volume 挂载持久化，容器删除后数据不丢失：
+- backend/文本标注器/projects/   — 文本标注项目数据
+- backend/文本标注器/storage/    — SQLite 数据库
+- backend/图像标注器/projects/   — 图像标注项目数据
+- backend/图像标注器/projects.json — 图像项目索引
+- backend/users.xlsx             — 用户账号表
