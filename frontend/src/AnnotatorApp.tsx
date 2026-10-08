@@ -414,7 +414,9 @@ export default function AnnotatorApp() {
         const td = new TextDecoder(e as any, { fatal: true })
         const s = td.decode(buf)
         return s
-      } catch {}
+      } catch {
+          // 编码尝试失败是预期的——继续尝试下一个编码
+        }
     }
     return new TextDecoder("utf-8").decode(buf)
   }

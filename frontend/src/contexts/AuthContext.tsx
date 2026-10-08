@@ -36,7 +36,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setToken(null)
         }
       } catch {
-        // 网络错误时保留 token，下次再试
+        // 网络错误时保留 token，下次刷新或重新登录时再试
+        console.warn("Token 验证请求失败（网络错误），保留本地 token 待下次重试")
       }
       setLoading(false)
     }

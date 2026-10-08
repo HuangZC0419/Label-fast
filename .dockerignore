@@ -6,10 +6,15 @@ frontend/node_modules
 frontend/.npm-cache
 frontend/dist
 backend/__pycache__
+**/__pycache__
 backend/.pytest_cache
+backend/.env
 *.pyc
 *.pyo
 *.log
+*.tar
 Dockerfile
 docker-compose.yml
 docker-compose.offline.yml
+Docker打包规范.md
+.gitattributes

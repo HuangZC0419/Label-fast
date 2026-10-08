@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>图像类标注平台</title>
-    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="./static/vue.global.js"></script>
+    <script src="./static/tailwind.js"></script>
     <script>
       tailwind.config = {
         theme: {
@@ -19,7 +19,7 @@
       }
     </script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        /* 离线环境：使用系统字体，不依赖 Google Fonts CDN */
         body {
             font-family: 'Inter', system-ui, -apple-system, sans-serif;
             -webkit-font-smoothing: antialiased;
@@ -96,14 +96,13 @@
             <div class="p-4 border-b bg-gray-50 flex flex-col gap-3">
                 <div class="font-bold text-gray-700 flex justify-between items-center">
                     <span>📋 项目配置</span>
-                    <button @click="clearForm" class="text-xs text-blue-600 hover:underline">重置表单</button>
                 </div>
 
                 <!-- 选择已有项目 -->
                 <div>
-                    <div class="text-xs text-gray-500 mb-1 font-medium">选择已有项目</div>
-                    <select v-model="currentProjectId" @change="onProjectSwitch" class="w-full border border-gray-300 rounded px-2 py-1 text-sm">
-                        <option value="" disabled>-- 请选择项目 --</option>
+                    <div class="text-xs text-gray-500 mb-1 font-medium">历史项目</div>
+                    <select v-model="currentProjectId" @change="onProjectSwitch" class="w-full border border-gray-300 rounded px-2 py-1.5 text-sm">
+                        <option value="">-- 请选择项目 --</option>
                         <option v-for="p in projects" :key="p.id" :value="p.id">{{ p.name }}</option>
                     </select>
                 </div>
@@ -115,24 +114,20 @@
                     <div class="flex-1 h-px bg-gray-300"></div>
                 </div>
 
-                <!-- 新建 / 切换 -->
+                <!-- 新建项目 -->
                 <div class="flex flex-col gap-1.5">
-                    <input v-model="projectForm.name" placeholder="输入新项目名称" class="w-full border border-gray-300 rounded px-2 py-1.5 text-sm">
-                    <div class="flex gap-1.5">
-                        <button @click="saveProject" class="flex-1 bg-indigo-600 text-white px-2 py-1.5 rounded text-sm hover:bg-indigo-700 font-medium">
-                            {{ currentProjectId ? '更新项目' : '创建项目' }}
-                        </button>
-                        <button @click="deleteProject" :disabled="!currentProjectId"
-                            class="bg-red-500 text-white px-3 py-1.5 rounded text-sm hover:bg-red-600 disabled:opacity-40 flex-shrink-0">删除</button>
-                    </div>
+                    <input v-model="newProjectName" placeholder="输入新项目名称" class="w-full border border-gray-300 rounded px-2 py-1.5 text-sm">
+                    <button @click="createProject" class="w-full bg-indigo-600 text-white px-2 py-1.5 rounded text-sm hover:bg-indigo-700 font-medium">
+                        新建项目
+                    </button>
                 </div>
 
                 <!-- 状态提示 -->
                 <div v-if="currentProjectId" class="p-2 bg-green-50 border border-green-200 rounded text-xs text-green-800 text-center">
-                    ✅ 当前项目: <strong>{{ projectForm.name }}</strong>
+                    ✅ 当前项目: <strong>{{ currentProject.name }}</strong>
                 </div>
-                <div v-else class="p-2 bg-gray-100 border border-gray-200 rounded text-xs text-gray-500 text-center">
-                    💡 选择已有项目或输入名称创建新项目
+                <div v-else class="p-2 bg-blue-50 border border-blue-200 rounded text-xs text-blue-700 text-center">
+                    💡 请选择历史项目，或输入名称创建新项目
                 </div>
 
                 <!-- 项目路径信息（仅项目激活后显示，只读） -->
@@ -140,16 +135,33 @@
                     <div class="flex flex-col gap-0.5">
                         <span class="text-[11px] font-medium text-gray-600">📁 图片存放位置</span>
                         <div class="text-xs text-gray-500 bg-white border border-gray-200 rounded px-2 py-1.5 break-all font-mono">
-                            {{ projectForm.image_dir }}
+                            {{ currentProject.image_dir }}
                         </div>
                         <span class="text-[10px] text-gray-400">请将待标注图片放入此文件夹，支持子目录</span>
                     </div>
                     <div class="flex flex-col gap-0.5">
                         <span class="text-[11px] font-medium text-gray-600">💾 标注结果保存位置</span>
                         <div class="text-xs text-gray-500 bg-white border border-gray-200 rounded px-2 py-1.5 break-all font-mono">
-                            {{ projectForm.jsonl_path }}
+                            {{ currentProject.project_dir }}
                         </div>
                         <span class="text-[10px] text-gray-400">问答和框选标注结果自动保存到此文件夹</span>
+                    </div>
+
+                    <div class="flex gap-2">
+                        <button @click="saveCurrentProject"
+                            class="mt-1 flex-1 bg-emerald-600 text-white px-3 py-2 rounded text-sm hover:bg-emerald-700 font-semibold flex items-center justify-center gap-1.5 shadow-sm btn-transition">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
+                            </svg>
+                            保存当前项目
+                        </button>
+                        <button @click="deleteProject"
+                            class="mt-1 flex-1 bg-red-600 text-white px-3 py-2 rounded text-sm hover:bg-red-700 font-semibold flex items-center justify-center gap-1.5 shadow-sm btn-transition">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+                            </svg>
+                            删除项目
+                        </button>
                     </div>
                 </div>
             </div>
@@ -162,8 +174,12 @@
 
             <!-- Image List -->
             <div class="flex-1 overflow-y-auto">
+                <!-- 无项目选中提示 -->
+                <div v-if="!currentProjectId" class="p-3 m-2 text-xs bg-blue-50 border border-blue-200 rounded text-blue-700">
+                    📂 请先选择或创建一个项目，然后放入图片到对应的 images 文件夹
+                </div>
                 <!-- 错误/提示信息 -->
-                <div v-if="imagesError" class="p-3 m-2 text-xs bg-yellow-50 border border-yellow-200 rounded text-yellow-800">
+                <div v-else-if="imagesError" class="p-3 m-2 text-xs bg-yellow-50 border border-yellow-200 rounded text-yellow-800">
                     ⚠️ {{ imagesError }}
                 </div>
                 <div v-else-if="images.length === 0" class="p-3 m-2 text-xs bg-blue-50 border border-blue-200 rounded text-blue-700">
@@ -236,7 +252,11 @@
                             <div class="absolute w-1.5 h-1.5 rounded-full" :style="{ backgroundColor: getLabelColor(currentBox.label), bottom: '-3px', right: '-3px' }"></div>
                         </div>
                     </template>
-                    <div v-else class="text-gray-400 m-auto">暂无图片</div>
+                    <div v-else class="text-gray-400 m-auto text-center">
+                        <div class="text-3xl mb-2">🖼️</div>
+                        <div v-if="!currentProjectId" class="text-sm">请先在左侧选择或创建一个项目</div>
+                        <div v-else class="text-sm">暂无图片，请将图片放入图片存放目录</div>
+                    </div>
                     
                 </div>
                 <div class="mt-2 flex justify-between items-center">
@@ -422,12 +442,14 @@ const { createApp, ref, computed, onMounted, onUnmounted, watch, nextTick } = Vu
 
 createApp({
     setup() {
+        const DEFAULT_USER_PROMPT = '详细描述这张图片。';
         const projects = ref([]);
         const currentProjectId = ref('');
+        const currentProject = ref({ id: '', name: '', project_dir: '', image_dir: '', jsonl_path: '', box_jsonl_path: '', labels: [], last_image: '' });
+        const newProjectName = ref('');
         // 通过后端 API 获取运行时的默认路径，避免硬编码 Docker/Windows 路径
         let DEFAULT_IMG_DIR = '';
         let DEFAULT_JSONL_DIR = '';
-        const projectForm = ref({ id: '', name: '', image_dir: '', jsonl_path: '' });
         
         const images = ref([]);
         const labeledSet = ref(new Set());
@@ -437,7 +459,7 @@ createApp({
         const imageContainerRef = ref(null);
         const drawingBoxRef = ref(null);
         
-        const userContent = ref('详细描述这张图片。');
+        const userContent = ref(DEFAULT_USER_PROMPT);
         const assistantContent = ref('');
         const saveStatus = ref(null);
         const userContentRef = ref(null);
@@ -445,6 +467,7 @@ createApp({
         const rightMode = ref('box');
 
         const boxes = ref({});
+        const qaRecords = ref({});
         const drawing = ref(false);
         const startPoint = ref({ x: 0, y: 0 });
         const currentBox = ref(null);
@@ -503,8 +526,72 @@ createApp({
 
         const getImageUrl = (name) => `./api/image_file/${encodeURI(name)}`;
         const isLabeled = (name) => labeledSet.value.has(name);
+        const normalizeUserContent = (content) => {
+            const text = String(content || '');
+            const normalized = text.replace(/\s*<image>\s*$/i, '').trim();
+            return normalized || DEFAULT_USER_PROMPT;
+        };
+        const getQaRecordForImage = (imgName) => {
+            if (!imgName) return null;
+            return qaRecords.value[imgName] || null;
+        };
+        const loadQaDraftForImage = (imgName) => {
+            const record = getQaRecordForImage(imgName);
+            userContent.value = record ? normalizeUserContent(record.user_content) : DEFAULT_USER_PROMPT;
+            assistantContent.value = record ? String(record.assistant_content || '') : '';
+        };
+        const captureCurrentQaDraft = () => {
+            const imgName = currentImageName.value;
+            if (!imgName) return { ...qaRecords.value };
 
-        const fetchImages = async () => {
+            const nextQa = { ...qaRecords.value };
+            const assistant = String(assistantContent.value || '');
+            if (assistant.trim()) {
+                nextQa[imgName] = {
+                    user_content: normalizeUserContent(userContent.value),
+                    assistant_content: assistant
+                };
+            } else {
+                delete nextQa[imgName];
+            }
+            qaRecords.value = nextQa;
+            return nextQa;
+        };
+        const buildProjectSnapshotPayload = () => {
+            const qaSnapshot = captureCurrentQaDraft();
+            return {
+                labels: [...labelList.value],
+                last_image: currentImageName.value || '',
+                qa_records: Object.entries(qaSnapshot)
+                    .filter(([, record]) => record && String(record.assistant_content || '').trim())
+                    .map(([image, record]) => ({
+                        image,
+                        user_content: normalizeUserContent(record.user_content),
+                        assistant_content: String(record.assistant_content || '')
+                    })),
+                box_records: Object.entries(boxes.value)
+                    .filter(([, list]) => Array.isArray(list) && list.length > 0)
+                    .map(([image, list]) => ({
+                        image,
+                        boxes: list.map(box => ({ ...box }))
+                    }))
+            };
+        };
+
+        const resetWorkspaceState = () => {
+            images.value = [];
+            labeledSet.value = new Set();
+            imagesError.value = '';
+            currentIndex.value = -1;
+            boxes.value = {};
+            qaRecords.value = {};
+            userContent.value = DEFAULT_USER_PROMPT;
+            assistantContent.value = '';
+            saveStatus.value = null;
+            boxSaveStatus.value = null;
+        };
+
+        const fetchImages = async (preferredImage = '') => {
             try {
                 const res = await fetch('./api/images');
                 const data = await res.json();
@@ -512,16 +599,57 @@ createApp({
                 labeledSet.value = new Set(data.labeled || []);
                 imagesError.value = data.error || '';
 
-                // Find first unlabeled image
-                if (images.value.length > 0) {
-                    const firstUnlabeled = images.value.findIndex(img => !labeledSet.value.has(img));
-                    if (firstUnlabeled !== -1) {
-                        currentIndex.value = firstUnlabeled;
-                    } else {
-                        currentIndex.value = 0;
+                // Load existing annotations for the project
+                try {
+                    const annRes = await fetch('./api/annotations');
+                    if (annRes.ok) {
+                        const annData = await annRes.json();
+                        const newBoxes = {};
+                        if (annData.box) {
+                            for (const record of annData.box) {
+                                if (record.image && record.boxes) {
+                                    newBoxes[record.image] = record.boxes;
+                                }
+                            }
+                        }
+                        boxes.value = newBoxes;
+                        
+                        const newQa = {};
+                        if (annData.qa) {
+                            for (const record of annData.qa) {
+                                if (record.image && record.conversations) {
+                                    const userMsg = record.conversations.find(c => c.role === 'user');
+                                    const assistantMsg = record.conversations.find(c => c.role === 'assistant');
+                                    newQa[record.image] = {
+                                        user_content: normalizeUserContent(userMsg ? userMsg.content : ''),
+                                        assistant_content: assistantMsg ? String(assistantMsg.content || '') : ''
+                                    };
+                                }
+                            }
+                        }
+                        qaRecords.value = newQa;
+                        
+                        // We could also store QA records if needed
+                        // For now, we mainly need boxes to show up on the image
                     }
+                } catch(e) {
+                    console.error("Failed to load annotations", e);
+                }
+
+                if (images.value.length > 0) {
+                    const preferredIndex = preferredImage ? images.value.indexOf(preferredImage) : -1;
+                    if (preferredIndex !== -1) {
+                        currentIndex.value = preferredIndex;
+                    } else {
+                        const firstUnlabeled = images.value.findIndex(img => !labeledSet.value.has(img));
+                        if (firstUnlabeled !== -1) currentIndex.value = firstUnlabeled;
+                        else currentIndex.value = 0;
+                    }
+                    loadQaDraftForImage(images.value[currentIndex.value]);
                 } else {
                     currentIndex.value = -1;
+                    userContent.value = DEFAULT_USER_PROMPT;
+                    assistantContent.value = '';
                 }
             } catch (e) {
                 console.error(e);
@@ -538,32 +666,63 @@ createApp({
 
         const onProjectSwitch = async () => {
              const pid = currentProjectId.value;
+             const previousProjectId = currentProject.value.id || '';
              if(!pid) return;
+             if (previousProjectId && pid !== previousProjectId) {
+                 currentProjectId.value = previousProjectId;
+                 const saved = await persistCurrentProject({ silent: true });
+                 if (!saved) {
+                     alert("当前项目保存失败，已取消切换");
+                     return;
+                 }
+                 currentProjectId.value = pid;
+             }
+
              const p = projects.value.find(x => x.id === pid);
              if(p) {
-                 projectForm.value = { ...p };
+                 currentProject.value = { ...p };
+                 labelList.value = p.labels ? [...p.labels] : [];
+                 currentBoxLabel.value = labelList.value.length > 0 ? labelList.value[0] : '';
+                 resetWorkspaceState();
                  await fetch(`./api/projects/switch/${pid}`, { method: 'POST' });
-                 await fetchImages();
+                 await fetchImages(p.last_image || '');
              }
         };
 
-        const saveProject = async () => {
-            if(!projectForm.value.name.trim()) {
+        const createProject = async () => {
+            if(!newProjectName.value.trim()) {
                 alert("请输入项目名称");
                 return;
+            }
+            if (currentProjectId.value) {
+                const saved = await persistCurrentProject({ silent: true });
+                if (!saved) {
+                    alert("当前项目保存失败，已取消新建项目");
+                    return;
+                }
             }
             try {
                 const res = await fetch('./api/projects', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(projectForm.value)
+                    body: JSON.stringify({
+                        id: '',
+                        name: newProjectName.value.trim(),
+                        image_dir: '',
+                        jsonl_path: '',
+                        labels: []
+                    })
                 });
                 if(res.ok) {
                     const newProject = await res.json();
                     await fetchProjects();
                     currentProjectId.value = newProject.id;
-                    projectForm.value = { ...newProject };
-                    await fetchImages();
+                    currentProject.value = { ...newProject };
+                    labelList.value = newProject.labels ? [...newProject.labels] : [];
+                    currentBoxLabel.value = labelList.value.length > 0 ? labelList.value[0] : '';
+                    newProjectName.value = '';
+                    resetWorkspaceState();
+                    await fetchImages(newProject.last_image || '');
                 } else {
                     const err = await res.json();
                     alert(err.detail || "保存失败");
@@ -573,25 +732,79 @@ createApp({
             }
         };
 
-        const deleteProject = async () => {
-            if(!currentProjectId.value) return;
-            if(!confirm("确定要删除该项目吗？")) return;
+        const persistCurrentProject = async ({ silent = false } = {}) => {
+            if(!currentProjectId.value) {
+                if (!silent) {
+                    alert("请先选择或创建一个项目");
+                }
+                return false;
+            }
             try {
-                await fetch(`./api/projects/${currentProjectId.value}`, { method: 'DELETE' });
-                projectForm.value = { id: '', name: '', image_dir: '', jsonl_path: '' };
-                currentProjectId.value = '';
-                images.value = [];
-                labeledSet.value = new Set();
-                await fetchProjects();
+                const payload = buildProjectSnapshotPayload();
+                const res = await fetch('./api/projects/current', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if(res.ok) {
+                    const updated = await res.json();
+                    await fetchProjects();
+                    currentProjectId.value = updated.id;
+                    currentProject.value = { ...updated };
+                    labelList.value = updated.labels ? [...updated.labels] : [];
+                    currentBoxLabel.value = labelList.value.length > 0 ? labelList.value[0] : '';
+                    if (!silent) {
+                        alert("✅ 当前项目已保存");
+                    }
+                    return true;
+                } else {
+                    const err = await res.json();
+                    if (!silent) {
+                        alert(err.detail || "保存失败");
+                    } else {
+                        console.error(err.detail || "保存失败");
+                    }
+                    return false;
+                }
             } catch(e) {
-                alert("删除失败");
+                if (!silent) {
+                    alert("保存当前项目失败: " + e.message);
+                } else {
+                    console.error("保存当前项目失败:", e);
+                }
+                return false;
             }
         };
-
-        const clearForm = () => {
-            projectForm.value = { id: '', name: '', image_dir: '', jsonl_path: '' };
-            currentProjectId.value = '';
-            images.value = [];
+        const saveCurrentProject = async () => {
+            await persistCurrentProject();
+        };
+        const deleteProject = async () => {
+            if (!currentProjectId.value) {
+                alert("请先选择一个项目");
+                return;
+            }
+            if (!confirm(`确定删除项目 "${currentProject.value.name}" 吗？项目目录和标注结果都会被删除。`)) {
+                return;
+            }
+            try {
+                const res = await fetch(`./api/projects/${currentProjectId.value}`, {
+                    method: 'DELETE'
+                });
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.detail || '删除失败');
+                }
+                currentProjectId.value = '';
+                currentProject.value = { id: '', name: '', project_dir: '', image_dir: '', jsonl_path: '', box_jsonl_path: '', labels: [], last_image: '' };
+                labelList.value = [];
+                currentBoxLabel.value = '';
+                newProjectName.value = '';
+                resetWorkspaceState();
+                await fetchProjects();
+                alert('项目已删除');
+            } catch (e) {
+                alert('删除项目失败: ' + e.message);
+            }
         };
 
         // 从后端加载默认配置（仅用于备用，不预填表单）
@@ -607,8 +820,12 @@ createApp({
         };
 
         const selectImage = (index) => {
+            if (currentIndex.value !== index) {
+                captureCurrentQaDraft();
+            }
             currentIndex.value = index;
-            assistantContent.value = '';
+            const imgName = images.value[index];
+            loadQaDraftForImage(imgName);
             saveStatus.value = null;
             drawing.value = false;
             currentBox.value = null;
@@ -621,6 +838,19 @@ createApp({
 
         const nextImage = () => {
             if (currentIndex.value < images.value.length - 1) selectImage(currentIndex.value + 1);
+        };
+
+        const cancelCurrentDrawing = (deactivateBoxMode = false) => {
+            if (imageContainerRef.value && activePointerId.value !== null) {
+                try { imageContainerRef.value.releasePointerCapture(activePointerId.value); } catch {}
+            }
+            drawing.value = false;
+            currentBox.value = null;
+            tempBox = null;
+            activePointerId.value = null;
+            if (deactivateBoxMode) {
+                boxCreateActive.value = false;
+            }
         };
 
         const onImageLoad = () => {
@@ -762,28 +992,19 @@ createApp({
 
         const finishDrawing = () => {
             if (!drawing.value || !tempBox || !currentImageName.value) {
-                drawing.value = false;
-                currentBox.value = null;
-                tempBox = null;
-                activePointerId.value = null;
+                cancelCurrentDrawing(false);
                 return;
             }
             const box = tempBox;
             if (Math.abs(box.x2 - box.x1) < 3 || Math.abs(box.y2 - box.y1) < 3) {
-                drawing.value = false;
-                currentBox.value = null;
-                tempBox = null;
-                activePointerId.value = null;
+                cancelCurrentDrawing(false);
                 return;
             }
             const img = currentImageName.value;
             const list = boxes.value[img] ? [...boxes.value[img]] : [];
             list.push({ x1: box.x1, y1: box.y1, x2: box.x2, y2: box.y2, label: box.label });
             boxes.value = { ...boxes.value, [img]: list };
-            drawing.value = false;
-            currentBox.value = null;
-            tempBox = null;
-            activePointerId.value = null;
+            cancelCurrentDrawing(false);
         };
 
         const onImagePointerUp = (e) => {
@@ -796,22 +1017,13 @@ createApp({
                 tempBox.y2 = pos.y;
             }
 
-            if (imageContainerRef.value && activePointerId.value !== null) {
-                try { imageContainerRef.value.releasePointerCapture(activePointerId.value); } catch {}
-            }
             finishDrawing();
         };
 
         const onImagePointerCancel = (e) => {
             if (!drawing.value) return;
             if (activePointerId.value !== null && e.pointerId !== activePointerId.value) return;
-            if (imageContainerRef.value && activePointerId.value !== null) {
-                try { imageContainerRef.value.releasePointerCapture(activePointerId.value); } catch {}
-            }
-            drawing.value = false;
-            currentBox.value = null;
-            tempBox = null;
-            activePointerId.value = null;
+            cancelCurrentDrawing(false);
         };
 
         const onImagePointerLeave = () => {
@@ -848,9 +1060,7 @@ createApp({
         const toggleBoxCreate = () => {
             boxCreateActive.value = !boxCreateActive.value;
             if (!boxCreateActive.value) {
-                drawing.value = false;
-                currentBox.value = null;
-                activePointerId.value = null;
+                cancelCurrentDrawing(false);
             }
         };
 
@@ -891,6 +1101,13 @@ createApp({
 
                 if (res.ok) {
                     labeledSet.value.add(currentImageName.value);
+                    qaRecords.value = {
+                        ...qaRecords.value,
+                        [currentImageName.value]: {
+                            user_content: normalizeUserContent(userContent.value),
+                            assistant_content: assistantContent.value
+                        }
+                    };
                     saveStatus.value = { type: 'success', msg: '保存成功!' };
                     setTimeout(() => {
                         saveStatus.value = null;
@@ -910,6 +1127,14 @@ createApp({
             if (e.ctrlKey && e.key === 'Enter') {
                 e.preventDefault(); // Prevent default newline in textarea
                 saveAndNext();
+                return;
+            }
+
+            if (e.key === 'Escape') {
+                if (boxCreateActive.value || drawing.value) {
+                    e.preventDefault();
+                    cancelCurrentDrawing(true);
+                }
                 return;
             }
 
@@ -996,14 +1221,9 @@ createApp({
         };
 
         onMounted(async () => {
-            // 1. 先加载运行时默认配置（避免硬编码 Docker 路径）
             await loadDefaultConfig();
-            // 2. 然后加载项目列表（不存在的路径会被自动过滤）
             await fetchProjects();
-            if (projects.value.length > 0) {
-                currentProjectId.value = projects.value[0].id;
-                await onProjectSwitch();
-            }
+            // 不自动选中任何项目——让用户主动选择或创建
             window.addEventListener('keydown', handleKeydown);
             window.addEventListener('resize', onImageLoad);
         });
@@ -1014,8 +1234,8 @@ createApp({
         });
 
         return {
-            projects, currentProjectId, projectForm, 
-            saveProject, deleteProject, onProjectSwitch, clearForm, fetchImages,
+            projects, currentProjectId, currentProject, newProjectName,
+            createProject, saveCurrentProject, deleteProject, onProjectSwitch, fetchImages,
             images, currentIndex, imagesError,
             userContent, assistantContent, saveStatus, userContentRef,
             currentImageName, labeledCount, totalImages,

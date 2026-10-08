@@ -291,7 +291,7 @@ if __name__ == "__main__":
     import socket
 
     parser = argparse.ArgumentParser(description="Label Fast Backend Server")
-    parser.add_argument("--port", type=int, default=8000, help="服务端口 (默认: 8000)")
+    parser.add_argument("--port", type=int, default=3002, help="服务端口 (默认: 3002)")
     args = parser.parse_args()
 
     def is_port_available(port: int) -> bool:
