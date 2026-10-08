@@ -25,9 +25,7 @@ entry point: a **text annotation workbench** supporting named entity recognition
 relation extraction, and an **image annotation workbench** supporting bounding-box
 labeling and visual question-answering generation.
 
-The platform is designed for deployment within restricted enterprise networks. All
-frontend assets are served locally, project data is persisted on the host filesystem,
-and the entire stack is delivered as a self-contained container image.
+The platform can also be deployed and run offline in a local environment.
 
 ---
 
