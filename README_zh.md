@@ -6,7 +6,7 @@
 
 [![Python](https://img.shields.io/badge/Python-3.10-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.109%2B-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
-[![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)](https://react.dev/)
+[![Vue](https://img.shields.io/badge/Vue-3-4FC08D?logo=vue.js&logoColor=white)](https://vuejs.org/)
 [![Vite](https://img.shields.io/badge/Vite-6-646CFF?logo=vite&logoColor=white)](https://vitejs.dev/)
 [![Docker](https://img.shields.io/badge/Docker-20.10%2B-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
 
@@ -51,8 +51,7 @@ LabelFast 采用单一入口的三层架构。FastAPI 应用同时承担 API 网
 
 | 层次 | 技术选型 | 职责 |
 | --- | --- | --- |
-| 前端（文本） | React 18 + TypeScript + Vite | 文本标注工作台、项目管理与认证界面 |
-| 前端（图像） | Vue 3 + Tailwind CSS | 图像标注工作台，以挂载子应用形式提供 |
+| 前端 | Vue 3 + TypeScript + Vite | 统一单页应用，左侧目录包含文本标注、图像标注与大模型问答标注 |
 | 后端 | Python 3.10 + FastAPI | REST 接口、JWT 认证中间件、单页应用托管 |
 | 数据存储 | SQLAlchemy 2.0 + SQLite | 文本项目、文档、标注与关系的结构化存储 |
 | 数据存储 | JSON / JSONL 文件 | 图像项目的配置与标注结果 |
@@ -64,7 +63,8 @@ LabelFast 采用单一入口的三层架构。FastAPI 应用同时承担 API 网
 - **单页应用回退中间件** —— 非 API 路径优先返回前端构建产物，未命中时回退至 `index.html`，
   以支持前端客户端路由。
 
-图像标注工作台挂载于 `/minimind` 路径。
+统一前端提供三个需登录的路由：`/app/text`、`/app/image` 与 `/app/qa`。
+图像标注接口仍挂载于 `/minimind/api`；旧 `/minimind` HTML 页面保留为兼容入口。
 
 ---
 
@@ -108,8 +108,9 @@ npm run dev
 
 | 入口 | 地址 |
 | --- | --- |
-| 文本标注工作台 | 前端根路径，例如 `http://localhost:5173` |
-| 图像标注工作台 | [`/minimind`](http://localhost:5173/minimind) |
+| 文本标注工作台 | [`/app/text`](http://localhost:5173/app/text) |
+| 图像（框选）标注工作台 | [`/app/image`](http://localhost:5173/app/image) |
+| 大模型问答标注工作台 | [`/app/qa`](http://localhost:5173/app/qa) |
 | 交互式接口文档 | 后端端口的 `/docs`，例如 `http://localhost:3002/docs` |
 
 在 Windows 环境下，可通过单一脚本同时启动两个服务：
@@ -211,12 +212,12 @@ LabelFast/
 │   │   ├── storage/                # SQLite 数据库
 │   │   └── projects/               # 文本项目数据
 │   └── 图像标注器/                  # 图像标注模块
-│       ├── label_system/app.py     # 图像标注服务，挂载于 /minimind
-│       ├── label_system/static/    # 离线前端资源（Vue 3、Tailwind CSS）
+│       ├── label_system/app.py     # 图像标注接口服务（/minimind/api）
+│       ├── label_system/static/    # 旧版兼容页面使用的离线资源
 │       ├── projects/               # 图像项目数据与标注结果
 │       ├── projects.json           # 图像项目索引
 │       └── tests/                  # 模块测试
-├── frontend/                       # React 18 + TypeScript 前端
+├── frontend/                       # Vue 3 + TypeScript 前端
 │   ├── src/                        # 应用源码
 │   ├── dist/                       # 生产构建产物
 │   └── vite.config.ts              # 开发服务器与接口代理配置

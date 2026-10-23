@@ -6,7 +6,7 @@
 
 [![Python](https://img.shields.io/badge/Python-3.10-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.109%2B-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
-[![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)](https://react.dev/)
+[![Vue](https://img.shields.io/badge/Vue-3-4FC08D?logo=vue.js&logoColor=white)](https://vuejs.org/)
 [![Vite](https://img.shields.io/badge/Vite-6-646CFF?logo=vite&logoColor=white)](https://vitejs.dev/)
 [![Docker](https://img.shields.io/badge/Docker-20.10%2B-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
 
@@ -55,8 +55,7 @@ platform is exposed on one port.
 
 | Layer | Technology | Responsibility |
 | --- | --- | --- |
-| Frontend (text) | React 18 + TypeScript + Vite | Text annotation workbench, project management, authentication UI |
-| Frontend (image) | Vue 3 + Tailwind CSS | Image annotation workbench, served as a mounted sub-application |
+| Frontend | Vue 3 + TypeScript + Vite | Unified SPA with a left navigation rail: text annotation, image box annotation and LLM QA annotation |
 | Backend | Python 3.10 + FastAPI | REST API, JWT authentication middleware, SPA hosting |
 | Persistence | SQLAlchemy 2.0 + SQLite | Relational storage for text projects, documents, annotations and relations |
 | Persistence | JSON / JSONL files | Project configuration and annotation results for image projects |
@@ -68,7 +67,9 @@ Request routing is governed by two middlewares registered in `backend/server.py`
 - **SPA fallback middleware** — serves compiled frontend assets for non-API paths and falls
   back to `index.html` to support client-side routing.
 
-The image annotation workbench is mounted at `/minimind`.
+The unified frontend exposes three authenticated routes: `/app/text`, `/app/image`
+and `/app/qa`. The image annotation APIs remain mounted at `/minimind/api`; the
+legacy `/minimind` HTML workbench is retained as a compatibility entry.
 
 ---
 
@@ -114,8 +115,9 @@ so the browser only needs to reach the frontend port.
 
 | Entry point | URL |
 | --- | --- |
-| Text annotation workbench | Frontend root, e.g. `http://localhost:5173` |
-| Image annotation workbench | [`/minimind`](http://localhost:5173/minimind) |
+| Text annotation workbench | [`/app/text`](http://localhost:5173/app/text) |
+| Image (box) annotation workbench | [`/app/image`](http://localhost:5173/app/image) |
+| LLM QA annotation workbench | [`/app/qa`](http://localhost:5173/app/qa) |
 | Interactive API documentation | `/docs` on the backend port, e.g. `http://localhost:3002/docs` |
 
 On Windows, both services can be launched from a single script:
@@ -221,12 +223,12 @@ LabelFast/
 │   │   ├── storage/                # SQLite database
 │   │   └── projects/               # Text project data
 │   └── 图像标注器/                  # Image annotation module
-│       ├── label_system/app.py     # Image annotation service, mounted at /minimind
-│       ├── label_system/static/    # Offline frontend assets (Vue 3, Tailwind CSS)
+│       ├── label_system/app.py     # Image annotation API service (/minimind/api)
+│       ├── label_system/static/    # Legacy offline assets for the compatibility page
 │       ├── projects/               # Image project data and annotation results
 │       ├── projects.json           # Image project index
 │       └── tests/                  # Module tests
-├── frontend/                       # React 18 + TypeScript frontend
+├── frontend/                       # Vue 3 + TypeScript frontend
 │   ├── src/                        # Application source
 │   ├── dist/                       # Production build output
 │   └── vite.config.ts              # Development server and API proxy configuration

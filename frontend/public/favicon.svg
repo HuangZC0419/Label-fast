@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="LabelFast">
+  <rect width="64" height="64" rx="16" fill="#141619" />
+  <!-- 朱砂橙标注括号 -->
+  <path
+    d="M27 19H19a1.5 1.5 0 0 0-1.5 1.5v23A1.5 1.5 0 0 0 19 45h8"
+    fill="none"
+    stroke="#E4572E"
+    stroke-width="4"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M37 19h8a1.5 1.5 0 0 1 1.5 1.5v23A1.5 1.5 0 0 1 45 45h-8"
+    fill="none"
+    stroke="#E4572E"
+    stroke-width="4"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <!-- 纸色标注基线 -->
+  <path
+    d="M28.5 32h7"
+    fill="none"
+    stroke="#F6F3EC"
+    stroke-width="3.5"
+    stroke-linecap="round"
+  />
+</svg>
