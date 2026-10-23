@@ -60,6 +60,10 @@ interface SyncDocument {
   id: number
   text: string
   status?: string
+  /** 来源文件（后端 Document.source_file） */
+  source_file?: string | null
+  /** 该文本在原文件中的分段序号，从 0 开始 */
+  unit_index?: number | null
   spans?: Span[]
   relations?: Relation[]
 }
@@ -81,7 +85,74 @@ const RELATION_COLORS = ['#8C5A3C', '#5B6B8C', '#5F7F6A', '#A6543A', '#7A6A8C', 
 const LABEL_ALPHA = 0.5
 const MAX_FILE_SIZE = 10 * 1024 * 1024
 const MAX_HISTORY = 100
-const SENTENCE_REGEX = /([。；！？!?;]|\.{3}|…{1,2})/
+/** 中文 / 英文句末标点（不包含英文句点，句点单独判断） */
+const SENTENCE_PUNCTUATION = '。．；！？!?;'
+
+/**
+ * 句子模式切分。
+ * - 句末标点（。；！？!?;）与省略号（…… / ...）作为边界，标点保留在上一句；
+ * - 换行作为硬边界：没有句末标点的行式文本（清单、命令、说明）也能按行拆开；
+ * - 英文句点仅在后接空白或文本结尾、且前一个字符不是数字时才算句末，
+ *   避免切开小数（3.9）、版本号以及 "1. xxx" 这类列表序号。
+ */
+function splitSentences(normalized: string): string[] {
+  const result: string[] = []
+  const chars = Array.from(normalized)
+  let current = ''
+
+  const flush = () => {
+    const trimmed = current.trim()
+    if (trimmed) result.push(trimmed)
+    current = ''
+  }
+
+  let i = 0
+  while (i < chars.length) {
+    const ch = chars[i]
+
+    if (ch === '\n') {
+      flush()
+      i++
+      continue
+    }
+
+    if (ch === '…') {
+      let j = i
+      while (j < chars.length && chars[j] === '…') j++
+      current += chars.slice(i, j).join('')
+      flush()
+      i = j
+      continue
+    }
+
+    if (ch === '.') {
+      let j = i
+      while (j < chars.length && chars[j] === '.') j++
+      const run = j - i
+      current += '.'.repeat(run)
+      if (run >= 3) {
+        // 英文省略号 ...
+        flush()
+        i = j
+        continue
+      }
+      const next = chars[j]
+      const prev = chars[i - 1]
+      const atEnd = next === undefined || /\s/.test(next)
+      const afterDigit = prev !== undefined && /\d/.test(prev)
+      if (run === 1 && atEnd && !afterDigit) flush()
+      i = j
+      continue
+    }
+
+    current += ch
+    if (SENTENCE_PUNCTUATION.includes(ch)) flush()
+    i++
+  }
+
+  flush()
+  return result
+}
 const CONFIG_SEPARATOR = /[，,;；]/
 
 interface AnnotationSnapshot {
@@ -170,6 +241,10 @@ export function useTextAnnotation() {
   const nextId = ref(1)
   const items = ref<string[]>([])
   const docIds = ref<number[]>([])
+  /** 每条文本的来源文件名，与 items 一一对应 */
+  const sourceFiles = ref<string[]>([])
+  /** 每条文本在其来源文件中的分段序号（从 1 开始），与 items 一一对应 */
+  const fileNumbers = ref<number[]>([])
   const itemStatuses = ref<Record<number, DocStatus>>({})
   const currentIndex = ref(-1)
   const splitMode = ref<SplitMode>('sentence')
@@ -207,6 +282,12 @@ export function useTextAnnotation() {
   const history = ref<AnnotationSnapshot[]>([])
 
   const chars = computed(() => Array.from(text.value))
+  /** 当前文档的来源文件名，用于工作台标题展示；无来源信息时为空字符串 */
+  const currentFileName = computed(() => {
+    const index = currentIndex.value
+    if (index < 0) return ''
+    return baseName(sourceFiles.value[index] || '')
+  })
   const hasDocuments = computed(() => items.value.length > 0)
   const canPrev = computed(() => currentIndex.value > 0)
   const canNext = computed(() => currentIndex.value >= 0 && currentIndex.value < items.value.length - 1)
@@ -851,26 +932,22 @@ export function useTextAnnotation() {
   function splitText(content: string): string[] {
     const normalized = content.replace(/\r\n/g, '\n')
     if (splitMode.value === 'as_is') return [normalized]
+    // 段落模式：以空行（一个或多个换行）作为段落边界
     if (splitMode.value === 'paragraph') {
-      return normalized.split(/\n+/).map((part) => part.trim()).filter(Boolean)
+      return normalized
+        .split(/\n\s*\n/)
+        .map((part) => part.trim())
+        .filter(Boolean)
     }
 
-    // 句子模式：句末标点保留在上一句中
-    const result: string[] = []
-    const parts = normalized.split(SENTENCE_REGEX)
-    let current = ''
-    for (const part of parts) {
-      if (SENTENCE_REGEX.test(part)) {
-        current += part
-        if (current.trim()) result.push(current.trim())
-        current = ''
-      } else {
-        current += part
-      }
-    }
-    const rest = current.trim()
-    if (rest) result.push(rest)
-    return result
+    // 句子模式：句末标点保留在上一句中；换行视为硬边界
+    return splitSentences(normalized)
+  }
+
+  /** 从路径中取文件名，兼容 Windows 反斜杠 */
+  function baseName(path: string): string {
+    const parts = path.split(/[\\/]/)
+    return parts[parts.length - 1] || path
   }
 
   async function handleFiles(files: FileList | null): Promise<void> {
@@ -882,6 +959,8 @@ export function useTextAnnotation() {
     }
 
     const collected: string[] = []
+    const collectedFiles: string[] = []
+    const collectedNumbers: number[] = []
     let count = 0
 
     for (const file of Array.from(files)) {
@@ -893,7 +972,12 @@ export function useTextAnnotation() {
         const buffer = await readFileBuffer(file)
         const content = tryDecode(buffer)
         const units = splitText(content)
-        collected.push(...units)
+        // 同一个文件按句子切分出的每条文本，都记录来源文件名与分段序号
+        units.forEach((unit, unitIndex) => {
+          collected.push(unit)
+          collectedFiles.push(file.name)
+          collectedNumbers.push(unitIndex + 1)
+        })
         count += units.length
       } catch {
         uploadInfo.value = `导入失败: ${file.name}`
@@ -905,6 +989,8 @@ export function useTextAnnotation() {
     const startIndex = items.value.length
     items.value = [...items.value, ...collected]
     docIds.value = [...docIds.value, ...collected.map(() => -1)]
+    sourceFiles.value = [...sourceFiles.value, ...collectedFiles]
+    fileNumbers.value = [...fileNumbers.value, ...collectedNumbers]
 
     const statuses = { ...itemStatuses.value }
     collected.forEach((_, offset) => {
@@ -1024,6 +1110,8 @@ export function useTextAnnotation() {
 
     const nextItems: string[] = []
     const nextDocIds: number[] = []
+    const nextSourceFiles: string[] = []
+    const nextFileNumbers: number[] = []
     const nextStatuses: Record<number, DocStatus> = {}
     const nextSpans: Record<number, Span[]> = {}
     const nextRelations: Record<number, Relation[]> = {}
@@ -1032,6 +1120,10 @@ export function useTextAnnotation() {
       data.documents.forEach((document, index) => {
         nextItems.push(typeof document.text === 'string' ? document.text : '')
         nextDocIds.push(typeof document.id === 'number' ? document.id : -1)
+        nextSourceFiles.push(typeof document.source_file === 'string' ? document.source_file : '')
+        nextFileNumbers.push(
+          typeof document.unit_index === 'number' ? document.unit_index + 1 : 1,
+        )
         nextStatuses[index] = normalizeStatus(document.status)
         nextSpans[index] = Array.isArray(document.spans)
           ? document.spans.map((span) => ({ ...span }))
@@ -1044,6 +1136,8 @@ export function useTextAnnotation() {
 
     items.value = nextItems
     docIds.value = nextDocIds
+    sourceFiles.value = nextSourceFiles
+    fileNumbers.value = nextFileNumbers
     itemStatuses.value = nextStatuses
     spansByIndex.value = nextSpans
     relationsByIndex.value = nextRelations
@@ -1220,6 +1314,8 @@ export function useTextAnnotation() {
         id: docIds.value[index] || -1,
         text: documentText,
         status: itemStatuses.value[index] || 'pending',
+        source_file: sourceFiles.value[index] || '',
+        unit_index: (fileNumbers.value[index] || 1) - 1,
         spans: nextSpansForSave[index] || [],
         relations: nextRelationsForSave[index] || [],
       })),
@@ -1267,7 +1363,12 @@ export function useTextAnnotation() {
 
     saveCurrent()
 
+    const sourceName = baseName(sourceFiles.value[index] || '')
     const record = {
+      // 标注对象的来源文件与分段序号（无来源信息时不写入该字段，保持旧格式）
+      ...(sourceName
+        ? { file_name: sourceName, file_number: fileNumbers.value[index] || 1 }
+        : {}),
       id: docIds.value[index] || -1,
       text: text.value,
       spans: spans.value,
@@ -1364,9 +1465,15 @@ export function useTextAnnotation() {
     nextItems.splice(index, 1)
     const nextDocIds = [...docIds.value]
     nextDocIds.splice(index, 1)
+    const nextSourceFiles = [...sourceFiles.value]
+    nextSourceFiles.splice(index, 1)
+    const nextFileNumbers = [...fileNumbers.value]
+    nextFileNumbers.splice(index, 1)
 
     items.value = nextItems
     docIds.value = nextDocIds
+    sourceFiles.value = nextSourceFiles
+    fileNumbers.value = nextFileNumbers
     itemStatuses.value = shiftMap(itemStatuses.value, index)
     spansByIndex.value = shiftMap(spansByIndex.value, index)
     relationsByIndex.value = shiftMap(relationsByIndex.value, index)
@@ -1432,6 +1539,7 @@ export function useTextAnnotation() {
     // 文档
     items,
     currentIndex,
+    currentFileName,
     splitMode,
     uploadInfo,
     hasDocuments,

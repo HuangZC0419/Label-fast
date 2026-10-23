@@ -1,11 +1,38 @@
+# ============================================================
+# LabelFast 后端依赖清单
+# 目标运行环境：Python 3.9（本文件已按 3.9 兼容性整理）
+# ============================================================
+
+# ---- Web 框架 / 服务器 ----
 fastapi>=0.109.0
 uvicorn>=0.27.0
+
+# ---- 数据模型 / ORM ----
 SQLAlchemy>=2.0.0
 pydantic>=2.6.0
+
+# ---- 配置 / 认证 / 文件处理 ----
 python-dotenv>=1.0.0
-charset-normalizer>=3.4.0
-python-multipart>=0.0.9
-jinja2>=3.1.0
-paddlenlp==3.0.0b4
 pyjwt>=2.8.0
 openpyxl>=3.1.0
+python-multipart>=0.0.9
+charset-normalizer>=3.4.0
+jinja2>=3.1.0
+
+# ============================================================
+# 说明
+# ============================================================
+# 1. paddlenlp==3.0.0b4 已从清单中移除（原 requirements.txt 第 9 行）：
+#    - backend 下所有 .py 代码均未 import paddlenlp / paddlepaddle（全量 grep 确认），
+#      属于“声明了但未使用”的前置依赖，移除不影响任何功能。
+#    - 该 beta 版及其底层框架 paddlepaddle 体积巨大，且在 Python 3.9 + Windows
+#      环境下安装/运行通常失败。
+#    如你的实际业务确实需要 NLP 预标注能力，请自行单独安装：
+#        pip install paddlepaddle
+#        pip install paddlenlp==3.0.0b4
+#
+# 2. starlette 由 fastapi 自动安装（代码中直接 import 了 starlette.middleware.base，
+#    无需单独声明，避免与 fastapi 的版本约束冲突）。
+#
+# 3. 图像标注器/requirements.txt 中的条目（fastapi/uvicorn/pydantic/python-multipart/
+#    jinja2）均为本清单子集，安装本文件即可，无需二次安装。

@@ -6,7 +6,7 @@ import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import jwt
 from openpyxl import load_workbook
@@ -77,7 +77,7 @@ def _get_jwt_secret() -> str:
     return secret
 
 
-def _read_jwt_secret_from_env_file(env_path: str) -> str | None:
+def _read_jwt_secret_from_env_file(env_path: str) -> Optional[str]:
     """从 .env 文件中提取已存在的 JWT_SECRET 值。"""
     if not os.path.exists(env_path):
         return None
@@ -197,7 +197,7 @@ def create_token(user_id: int, username: str) -> str:
     return token
 
 
-def verify_token(token: str) -> dict | None:
+def verify_token(token: str) -> Optional[dict]:
     """验证 JWT 令牌的有效性。
 
     Args:
@@ -221,11 +221,11 @@ def verify_token(token: str) -> dict | None:
 # 认证业务逻辑
 # ============================================================
 
-def get_user_by_username(username: str) -> ExcelUser | None:
+def get_user_by_username(username: str) -> Optional[ExcelUser]:
     return EXCEL_USERS_BY_USERNAME.get(username)
 
 
-def get_user_by_id(user_id: int) -> ExcelUser | None:
+def get_user_by_id(user_id: int) -> Optional[ExcelUser]:
     for user in EXCEL_USERS_BY_USERNAME.values():
         if user.id == user_id:
             return user

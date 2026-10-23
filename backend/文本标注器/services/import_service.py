@@ -1,4 +1,5 @@
 import os
+import re
 from typing import List, Optional, Tuple
 from ..storage.db import get_session, init_db
 from ..storage.schema import Document, Project
@@ -24,22 +25,66 @@ def split_text(text: str, strategy: str, fixed_length: Optional[int] = None) -> 
     if strategy == "as_is":
         return [t]
     if strategy == "paragraph":
-        parts = [p.strip() for p in t.split("\n\n")]
+        # 以空行（一个或多个换行）作为段落边界
+        parts = [p.strip() for p in re.split(r"\n\s*\n", t)]
         return [p for p in parts if p]
     if strategy == "sentence":
-        import re
+        # 句末标点与省略号作为边界，标点保留在上一句；
+        # 换行视为硬边界；英文句点仅在后面是空白/结尾且前一个字符不是数字时才算句末，
+        # 避免切开小数、版本号以及 "1. xxx" 这类列表序号。
         sents: List[str] = []
-        cur = []
-        for ch in t:
+        cur: List[str] = []
+        n = len(t)
+
+        def flush():
+            s = "".join(cur).strip()
+            if s:
+                sents.append(s)
+            cur.clear()
+
+        i = 0
+        while i < n:
+            ch = t[i]
+
+            if ch == "\n":
+                flush()
+                i += 1
+                continue
+
+            if ch == "…":
+                j = i
+                while j < n and t[j] == "…":
+                    j += 1
+                cur.append(t[i:j])
+                flush()
+                i = j
+                continue
+
+            if ch == ".":
+                j = i
+                while j < n and t[j] == ".":
+                    j += 1
+                run = j - i
+                cur.append("." * run)
+                if run >= 3:
+                    flush()
+                    i = j
+                    continue
+                nxt = t[j] if j < n else ""
+                prev = t[i - 1] if i > 0 else ""
+                at_end = nxt == "" or nxt.isspace()
+                after_digit = prev.isdigit()
+                if run == 1 and at_end and not after_digit:
+                    flush()
+                i = j
+                continue
+
             cur.append(ch)
-            if re.match(r"[。．\.！？!?]", ch):
-                s = "".join(cur).strip()
-                if s:
-                    sents.append(s)
-                cur = []
-        rest = "".join(cur).strip()
-        if rest:
-            sents.append(rest)
+            if ch in "。．；！？!?;":
+                flush()
+            i += 1
+
+        flush()
         return sents
     if strategy == "length":
         n = int(fixed_length or 500)

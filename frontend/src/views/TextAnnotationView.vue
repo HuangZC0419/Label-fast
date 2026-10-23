@@ -25,6 +25,7 @@ const {
   savingProject,
   items,
   currentIndex,
+  currentFileName,
   splitMode,
   uploadInfo,
   canPrev,
@@ -609,7 +610,9 @@ const progressPercent = computed(() =>
       <div class="card annotation-card">
         <div class="document-eyebrow">
           <span class="eyebrow-brand">
-            Document
+            <span class="eyebrow-file" :title="currentFileName || 'Document'">
+              {{ currentFileName || 'Document' }}
+            </span>
             <span class="eyebrow-divider" aria-hidden="true">·</span>
             <span class="eyebrow-figures">
               {{ currentIndex >= 0 ? formatIndex(currentIndex + 1) : '—' }}
@@ -1825,6 +1828,13 @@ const progressPercent = computed(() =>
   gap: 7px;
   min-width: 0;
   white-space: nowrap;
+}
+/* 源文件名可能较长：超长时省略，完整名称通过 title 提示 */
+.eyebrow-file {
+  min-width: 0;
+  max-width: 42ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .eyebrow-figures {
   color: var(--tf-ink-3);

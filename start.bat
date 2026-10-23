@@ -15,8 +15,8 @@ echo   Two new windows will open.
 echo   Close each window to stop its service.
 echo.
 
-echo [1/2] Starting backend (conda: label_v4)...
-start "LabelFast-Backend" cmd /k "call conda activate label_v4 && cd /d %~dp0backend && python -m uvicorn server:app --host 0.0.0.0 --port 8000 --reload"
+echo [1/2] Starting backend (conda: CF)...
+start "LabelFast-Backend" cmd /k "call conda activate CF && cd /d %~dp0backend && python -m uvicorn server:app --host 0.0.0.0 --port 8000 --reload"
 
 echo [2/2] Starting frontend...
 start "LabelFast-Frontend" cmd /k "set BACKEND_PORT=8000 && cd /d %~dp0frontend && npm run dev"

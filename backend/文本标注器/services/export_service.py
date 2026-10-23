@@ -9,6 +9,18 @@ from ..storage.db import get_session, init_db
 from ..storage.schema import Document, Annotation, Relation, Project
 from .record_service import get_project_dir, get_annotation_file_path
 
+
+def _file_name(path) -> str:
+    """从来源路径中取文件名，兼容 Windows 与 POSIX 分隔符。"""
+    if not path:
+        return ""
+    return os.path.basename(str(path).replace("\\", "/")) or str(path)
+
+
+def _file_number(unit_index) -> int:
+    """分段序号：数据库中的 unit_index 从 0 开始，导出时转为从 1 开始。"""
+    return int(unit_index) + 1 if unit_index is not None else 1
+
 def export_project(project_id: int, fmt: str = "jsonl", output_dir: Optional[str] = None, doc_ids: Optional[List[int]] = None) -> str:
     init_db()
     s = get_session()
@@ -76,6 +88,8 @@ def export_project(project_id: int, fmt: str = "jsonl", output_dir: Optional[str
 
                 doc_obj = {
                     "text_id": f"doc_{d.id}_unit_{d.unit_index or 0}",
+                    "file_name": _file_name(d.source_file),
+                    "file_number": _file_number(d.unit_index),
                     "original_text": d.text,
                     "annotations": {
                         "entities": entities,
@@ -112,14 +126,19 @@ def export_project(project_id: int, fmt: str = "jsonl", output_dir: Optional[str
                     for r in rels:
                         if r.from_ann_id in idx and r.to_ann_id in idx:
                             relations.append({"from_entity": idx[r.from_ann_id], "to_entity": idx[r.to_ann_id], "relation": r.relation_type})
-                    obj = {"text": d.text, "entities": entities, "relations": relations}
+                    obj = {}
+                    name = _file_name(d.source_file)
+                    if name:
+                        obj["file_name"] = name
+                        obj["file_number"] = _file_number(d.unit_index)
+                    obj.update({"text": d.text, "entities": entities, "relations": relations})
                     f.write(json_dumps(obj) + "\n")
             return path
         if fmt.lower() in {"tsv", "csv"}:
             sep = "\t" if fmt.lower() == "tsv" else ","
             path = os.path.join(base_dir, f"project_{project_id}_{ts}.{fmt.lower()}")
             with open(path, "w", encoding="utf-8") as f:
-                f.write(sep.join(["doc_id","start","end","label","fragment"]) + "\n")
+                f.write(sep.join(["doc_id","start","end","label","fragment","file_name","file_number"]) + "\n")
                 for d in docs:
                     q_anns = select(Annotation).where(Annotation.doc_id == d.id).order_by(Annotation.start.asc())
                     anns = s.execute(q_anns).scalars().all()
@@ -128,10 +147,12 @@ def export_project(project_id: int, fmt: str = "jsonl", output_dir: Optional[str
                         # 转义字段中的分隔符和换行符，避免 CSV/TSV 格式错乱
                         safe_frag = frag.replace("\t", " ").replace("\n", " ").replace("\r", " ")
                         safe_label = a.label.replace("\t", " ").replace("\n", " ").replace("\r", " ")
+                        safe_name = _file_name(d.source_file).replace("\t", " ").replace("\n", " ").replace("\r", " ")
                         if fmt.lower() == "csv":
                             safe_frag = safe_frag.replace(",", "，")
                             safe_label = safe_label.replace(",", "，")
-                        row = sep.join([str(d.id), str(a.start), str(a.end), safe_label, safe_frag])
+                            safe_name = safe_name.replace(",", "，")
+                        row = sep.join([str(d.id), str(a.start), str(a.end), safe_label, safe_frag, safe_name, str(_file_number(d.unit_index))])
                         f.write(row + "\n")
             return path
         raise ValueError("unsupported format")
@@ -208,6 +229,8 @@ def export_project_zip(project_id: int, doc_ids: Optional[List[int]] = None) -> 
 
                 export_docs.append({
                     "text_id": f"doc_{idx+1}",
+                    "file_name": rec.get("file_name", ""),
+                    "file_number": rec.get("file_number", 1),
                     "original_text": text,
                     "annotations": {"entities": entities, "relations": relations},
                     "metadata": {
@@ -238,16 +261,23 @@ def export_project_zip(project_id: int, doc_ids: Optional[List[int]] = None) -> 
                     tid = r.get("toId")
                     if fid in idx_map and tid in idx_map:
                         rels_out.append({"from_entity": idx_map[fid], "to_entity": idx_map[tid], "relation": r.get("type", "")})
-                jsonl_lines.append(json.dumps({"text": rec.get("text", ""), "entities": entities_out, "relations": rels_out}, ensure_ascii=False))
+                line_obj = {}
+                if rec.get("file_name"):
+                    line_obj["file_name"] = rec.get("file_name")
+                    line_obj["file_number"] = rec.get("file_number", 1)
+                line_obj.update({"text": rec.get("text", ""), "entities": entities_out, "relations": rels_out})
+                jsonl_lines.append(json.dumps(line_obj, ensure_ascii=False))
             zf.writestr(f"{safe_name}/annotations.jsonl", "\n".join(jsonl_lines) + "\n")
 
             # ---- CSV ----
-            csv_lines = ["doc_id,start,end,label,fragment"]
+            csv_lines = ["doc_id,start,end,label,fragment,file_name,file_number"]
             for idx, rec in enumerate(records):
                 text = rec.get("text", "")
+                file_name = str(rec.get("file_name", "")).replace(",", "，")
+                file_number = rec.get("file_number", 1)
                 for sp in rec.get("spans", []):
                     frag = text[sp["start"]:sp["end"]].replace("\t"," ").replace("\n"," ").replace("\r"," ").replace(",","，") if sp["end"] <= len(text) else ""
-                    csv_lines.append(f"{idx+1},{sp['start']},{sp['end']},{sp['label'].replace(',','，')},{frag}")
+                    csv_lines.append(f"{idx+1},{sp['start']},{sp['end']},{sp['label'].replace(',','，')},{frag},{file_name},{file_number}")
             zf.writestr(f"{safe_name}/annotations.csv", "\n".join(csv_lines) + "\n")
 
             # ---- README ----

@@ -90,6 +90,8 @@ def load_project_data(project_id: int) -> Dict[str, Any]:
                 "id": d.id,
                 "text": d.text,
                 "status": d.status,
+                "source_file": d.source_file,
+                "unit_index": d.unit_index,
                 "spans": spans,
                 "relations": relations
             })
@@ -127,22 +129,42 @@ def save_project_data(project_id: int, data: Dict[str, Any]):
             for d_data in data["documents"]:
                 doc_id = d_data.get("id")
                 doc = None
-                
+
+                # 来源文件与分段序号：用于在标注记录中回溯原始对象
+                source_file = d_data.get("source_file")
+                unit_index = d_data.get("unit_index")
+
                 if doc_id and doc_id > 0:
                     doc = s.get(Document, doc_id)
                     if doc and doc.project_id == project_id:
                         doc.text = d_data.get("text", doc.text)
                         doc.status = d_data.get("status", doc.status)
+                        if source_file is not None:
+                            doc.source_file = source_file or None
+                        if unit_index is not None:
+                            doc.unit_index = unit_index
                     else:
                         # ID mismatch or not found, create new
-                        doc = Document(project_id=project_id, text=d_data["text"], status=d_data.get("status", "pending"))
+                        doc = Document(
+                            project_id=project_id,
+                            text=d_data["text"],
+                            status=d_data.get("status", "pending"),
+                            source_file=source_file or None,
+                            unit_index=unit_index,
+                        )
                         s.add(doc)
                         s.flush()
                 else:
                     # Create new
-                    doc = Document(project_id=project_id, text=d_data["text"], status=d_data.get("status", "pending"))
+                    doc = Document(
+                        project_id=project_id,
+                        text=d_data["text"],
+                        status=d_data.get("status", "pending"),
+                        source_file=source_file or None,
+                        unit_index=unit_index,
+                    )
                     s.add(doc)
-                    s.flush() 
+                    s.flush()
                 
                 # Replace annotations
                 s.execute(delete(Relation).where(Relation.doc_id == doc.id))
