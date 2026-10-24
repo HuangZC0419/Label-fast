@@ -1,5 +1,9 @@
 import os
 import io
+import asyncio
+import logging
+import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Body, Response, Query, Request
@@ -8,14 +12,58 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 from dotenv import load_dotenv
-from 文本标注器.services import export_service, sync_service, record_service, project_service, auth_service
+from 文本标注器.services import export_service, sync_service, record_service, project_service, auth_service, project_scan_service
 from 图像标注器.label_system.app import app as minimind_app
 from typing import Dict, Any, List, Optional
 
 # 加载 .env 文件（必须在 app 初始化之前）
 load_dotenv()
 
-app = FastAPI()
+# 启动扫描摘要需要可见，因此在 app 创建前配置根日志
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+
+logger = logging.getLogger(__name__)
+
+
+def _scan_projects_on_startup() -> None:
+    """启动时扫描项目目录：注册新项目并导入其 imports/*.txt。
+
+    扫描失败只记录日志，不影响服务正常启动。
+    """
+    started = time.perf_counter()
+    try:
+        summary = project_scan_service.scan_projects_directory()
+        elapsed = time.perf_counter() - started
+        logger.info(
+            "启动扫描完成（耗时 %.2fs）: 新建项目=%s, 导入文档=%s, "
+            "跳过文档=%s, 已存在项目=%s",
+            elapsed,
+            summary["created_projects"],
+            summary["imported_documents"],
+            summary["skipped_documents"],
+            summary["existing_projects"],
+        )
+        for error in summary["errors"]:
+            logger.warning("启动扫描文件错误: %s", error)
+    except Exception:
+        logger.exception(
+            "启动扫描项目目录失败（耗时 %.2fs），服务继续启动",
+            time.perf_counter() - started,
+        )
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    """应用生命周期：启动时执行目录扫描（替代已弃用的 on_event）。"""
+    # 扫描包含文件与数据库 IO，放入线程池避免阻塞事件循环
+    await asyncio.to_thread(_scan_projects_on_startup)
+    yield
+
+
+app = FastAPI(lifespan=_lifespan)
 
 # Mount Minimind Image Labeler
 app.mount("/minimind", minimind_app)

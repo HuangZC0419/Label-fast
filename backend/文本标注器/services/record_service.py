@@ -5,12 +5,24 @@ from typing import Dict, Any
 # 项目数据根目录：backend/文本标注器/projects/
 _PROJECTS_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "projects"))
 
-def get_project_dir(project_name: str) -> str:
-    """获取项目专属文件夹路径（按项目名），不存在则自动创建。"""
+def sanitize_project_name(project_name: str) -> str:
+    """把项目名转换为可安全用于目录名的形式（纯函数，不做 IO）。
+
+    仅保留字母、数字、空格、短横线和下划线；空结果回退为 ``default``。
+    该规则必须与历史目录命名保持一致，调用方不要另行实现。
+    """
     safe_name = "".join([c for c in project_name if c.isalnum() or c in (' ', '-', '_')]).strip()
     if not safe_name:
-        safe_name = "default"
-    proj_dir = os.path.join(_PROJECTS_ROOT, safe_name)
+        return "default"
+    return safe_name
+
+def get_projects_root() -> str:
+    """返回项目存档根目录（backend/文本标注器/projects/）。"""
+    return _PROJECTS_ROOT
+
+def get_project_dir(project_name: str) -> str:
+    """获取项目专属文件夹路径（按项目名），不存在则自动创建。"""
+    proj_dir = os.path.join(_PROJECTS_ROOT, sanitize_project_name(project_name))
     os.makedirs(proj_dir, exist_ok=True)
     return proj_dir
 
