@@ -2,7 +2,11 @@
   {
     "id": "2a4e4b66-a3fd-4b26-b180-f6d7217c5ba6",
     "name": "121",
+    "project_dir": "projects/121",
     "image_dir": "projects/121/images",
-    "jsonl_path": "projects/121"
+    "jsonl_path": "projects/121/标注结果_qa.jsonl",
+    "box_jsonl_path": "projects/121/标注结果_boxes.jsonl",
+    "labels": [],
+    "last_image": ""
   }
 ]
