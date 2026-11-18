@@ -101,8 +101,7 @@
 │  └─ deepseek-harness/            架构规格（specs）与实施计划（plans）
 ├─ 软件示例/                        各类标注功能的示例数据
 ├─ export_annotation_summary.py    标注明细汇总导出脚本
-├─ README.md / README_en.md        中英文说明
-└─ start.bat                       见上
+└─ README.md / README_en.md        中英文说明
 ```
 
 各模块的详细目录说明与接口文档见模块内 `README.md`：
