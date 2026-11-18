@@ -1,6 +1,6 @@
 # 混合标注项目管理与工具栏二次重构 实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans. Steps use checkbox (`- [ ]`) syntax.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use subagent-driven-development (recommended) or executing-plans. Steps use checkbox (`- [ ]`) syntax.
 
 **Goal:** 项目管理全部收进顶栏「⋯」菜单；项目配置与转换参数合并为一个设置弹窗；左侧只留导入与文件；工具栏四个控制项统一 chip，保存与导出并列；删除顶部重复的截图入口。
 
@@ -8,7 +8,7 @@
 
 **Tech Stack:** Vue 3 `<script setup>` + TypeScript、Vite 6、原生 CSS。
 
-**Spec:** `docs/superpowers/specs/2026-11-10-mixed-annotation-project-toolbar-design.md`
+**Spec:** `docs/deepseek-harness/specs/2026-11-10-mixed-annotation-project-toolbar-design.md`
 
 ---
 

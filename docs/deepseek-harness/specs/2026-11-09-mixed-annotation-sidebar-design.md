@@ -85,7 +85,9 @@
 ```
 
 - 组间 1px 竖直分隔线，高 16px，`var(--mw-line)`。
-- `PDF 预览` 与 `同步滚动` 包进 `.mw-view-group`，二者禁用条件一致：`!completed || !documentReady || source_type !== 'pdf'`。
+- `PDF 预览` 与 `同步滚动` 包进 `.mw-view-group`（视觉成组）。
+  - 预览按钮文案随文件类型切换：`source_type === 'pdf'` 显示「PDF 预览」，图片显示「原图预览」；两者都可用，图片预览不能禁用。
+  - `同步滚动` 仅对 PDF 有意义，禁用条件保持 `!completed || !documentReady || source_type !== 'pdf'`。
 - 「图片/表格标注」保持 `mw-tool--capture` 橙色描边强调。
 - 「保存标注」保持唯一实心主按钮。
 - `≤760px`：分隔线隐藏，分组容器自动换行；不改变任何行为。

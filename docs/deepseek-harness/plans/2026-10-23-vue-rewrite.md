@@ -1,6 +1,6 @@
-# LabelFast 前端 Vue 重写实施计划
+# 数据标注与分类工具 前端 Vue 重写实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 > 本仓库当前分支为 `main`；除非用户明确要求，否则不要执行 git commit。
 
 **Goal:** 将 `frontend/` 从 React 重写为 Vue 3 单页应用，并新增最左侧图标目录栏，包含文本标注、图像标注、大模型问答标注三个页面。
@@ -58,7 +58,7 @@
 
 ```json
 {
-  "name": "label-fast-frontend",
+  "name": "data-annotation-frontend",
   "version": "0.0.1",
   "private": true,
   "scripts": {
@@ -146,7 +146,7 @@ declare module '*.vue' {
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>LabelFast 数据标注平台</title>
+    <title>数据标注与分类工具 数据标注平台</title>
   </head>
   <body>
     <div id="app"></div>
@@ -324,7 +324,7 @@ export default router
 
 `AppNavRail.vue`：三个 `router-link`（`/app/text`、`/app/image`、`/app/qa`），使用 SVG 图标与短标签，`router-link-active` 高亮。
 
-`AppHeader.vue`：左侧品牌 Logo + `LabelFast` + 当前模块标题；右侧用户名 + 退出按钮（调用 `logout()` 后 `router.push('/login')`）。
+`AppHeader.vue`：左侧品牌 Logo + `数据标注与分类工具` + 当前模块标题；右侧用户名 + 退出按钮（调用 `logout()` 后 `router.push('/login')`）。
 
 - [ ] **Step 5: 补充导航与布局样式**
 

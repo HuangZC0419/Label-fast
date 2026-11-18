@@ -1,4 +1,4 @@
-# LabelFast Ink & Signal UI 设计方向
+# 数据标注与分类工具 Ink & Signal UI 设计方向
 
 - 日期：2026-10-23
 - 状态：已确认并实施
