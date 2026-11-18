@@ -19,6 +19,12 @@ const moduleEyebrow = computed(() => {
       return 'Image Annotation'
     case 'qa-annotation':
       return 'Q&A Annotation'
+    case 'standard-classify':
+      return 'Standard Classification'
+    case 'mixed-annotation':
+      return 'Mixed Annotation'
+    case 'model-annotation':
+      return 'Model Annotation'
     default:
       return 'Workspace'
   }
@@ -37,7 +43,7 @@ function handleLogout(): void {
 <template>
   <header class="header app-header">
     <div class="header-brand">
-      <span class="header-brand-name header-wordmark">LabelFast</span>
+      <span class="header-brand-name header-wordmark">数据标注与分类工具</span>
       <span class="header-separator" aria-hidden="true"></span>
       <div class="header-module">
         <span class="header-module-eyebrow">{{ moduleEyebrow }}</span>

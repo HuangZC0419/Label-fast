@@ -1,0 +1,156 @@
+{"text": "首件检验孔径5×10.2，结果合格。", "spans": [{"id": 1, "start": 6, "end": 12, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "加工中心按程序钻5.5×10.0阵列孔。", "spans": [{"id": 1, "start": 8, "end": 16, "label": "尺寸公差"}, {"id": 2, "start": 7, "end": 8, "label": "工艺"}], "relations": [], "meta": {}}
+{"text": "钻M24×3底孔，攻丝前工序。", "spans": [{"id": 1, "start": 0, "end": 1, "label": "工艺"}, {"id": 2, "start": 1, "end": 6, "label": "尺寸公差"}, {"id": 3, "start": 9, "end": 11, "label": "工艺"}], "relations": [], "meta": {}}
+{"text": "要求钻出2×3.5的定位孔。", "spans": [{"id": 1, "start": 4, "end": 9, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "检测4×8.0孔的位置度公差。", "spans": [{"id": 1, "start": 2, "end": 7, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "OP08 钻 3×5.5 孔。", "spans": [{"id": 1, "start": 0, "end": 4, "label": "工序编号"}, {"id": 2, "start": 5, "end": 6, "label": "工艺"}, {"id": 3, "start": 7, "end": 12, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "钻模板上有4.2×6.8的导向孔。", "spans": [{"id": 1, "start": 5, "end": 12, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "钻φ5×11.0深孔，使用枪钻冷却。", "spans": [{"id": 1, "start": 0, "end": 1, "label": "工艺"}, {"id": 2, "start": 2, "end": 8, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "4.8×9.2孔使用硬质合金钻头加工。", "spans": [{"id": 1, "start": 0, "end": 7, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "先钻后铰，确保配合精度。", "spans": [{"id": 1, "start": 1, "end": 2, "label": "工艺"}, {"id": 2, "start": 3, "end": 4, "label": "工艺"}], "relations": [], "meta": {}}
+{"text": "设备日常维护保养按计划执行。", "spans": [], "relations": [], "meta": {}}
+{"text": "毛坯表面不得有裂纹、气孔等缺陷。", "spans": [], "relations": [], "meta": {}}
+{"text": "重点进行OP08钻4.5×9.0通孔与OP20攻丝M8×125。", "spans": [{"id": 1, "start": 0, "end": 4, "label": "工序编号"}, {"id": 2, "start": 6, "end": 7, "label": "工艺"}, {"id": 3, "start": 7, "end": 14, "label": "尺寸公差"}, {"id": 4, "start": 18, "end": 22, "label": "工序编号"}, {"id": 5, "start": 23, "end": 25, "label": "工艺"}, {"id": 6, "start": 25, "end": 31, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "扩 4.3×6.8 孔，使用硬质合金扩孔钻。", "spans": [{"id": 1, "start": 0, "end": 1, "label": "工艺"}, {"id": 2, "start": 2, "end": 9, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "操作人员需严格按照操作规程执行。", "spans": [], "relations": [], "meta": {}}
+{"text": "加工中心按程序钻5×8.8阵列孔。", "spans": [{"id": 1, "start": 8, "end": 13, "label": "尺寸公差"}, {"id": 2, "start": 7, "end": 8, "label": "工艺"}], "relations": [], "meta": {}}
+{"text": "先钻Φ5×11.0孔，再扩至11.5，最后铰至H7。", "spans": [{"id": 1, "start": 1, "end": 2, "label": "工艺"}, {"id": 2, "start": 3, "end": 9, "label": "尺寸公差"}, {"id": 3, "start": 12, "end": 13, "label": "工艺"}, {"id": 4, "start": 14, "end": 18, "label": "尺寸公差"}, {"id": 5, "start": 21, "end": 22, "label": "工艺"}], "relations": [], "meta": {}}
+{"text": "重点进行OP10钻3×5.5通孔与OP25攻丝M10×1.5。", "spans": [{"id": 1, "start": 0, "end": 4, "label": "工序编号"}, {"id": 2, "start": 6, "end": 7, "label": "工艺"}, {"id": 3, "start": 7, "end": 12, "label": "尺寸公差"}, {"id": 4, "start": 16, "end": 20, "label": "工序编号"}, {"id": 5, "start": 21, "end": 23, "label": "工艺"}, {"id": 6, "start": 23, "end": 30, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "钻通孔并倒角。", "spans": [{"id": 1, "start": 0, "end": 1, "label": "工艺"}], "relations": [], "meta": {}}
+{"text": "OP08 钻 Φ3.2×6.5 通孔与 OP30 镗 M8×1.25 内孔。", "spans": [{"id": 1, "start": 0, "end": 4, "label": "工序编号"}, {"id": 2, "start": 6, "end": 7, "label": "工艺"}, {"id": 3, "start": 9, "end": 16, "label": "尺寸公差"}, {"id": 4, "start": 21, "end": 25, "label": "工序编号"}, {"id": 5, "start": 27, "end": 28, "label": "工艺"}, {"id": 6, "start": 29, "end": 36, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "工序要求加工3×5.5的孔。", "spans": [{"id": 1, "start": 6, "end": 11, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "先钻Φ8×14.3孔，再扩至12.7，最后铰至H7。", "spans": [{"id": 1, "start": 1, "end": 2, "label": "工艺"}, {"id": 2, "start": 3, "end": 9, "label": "尺寸公差"}, {"id": 3, "start": 12, "end": 13, "label": "工艺"}, {"id": 4, "start": 14, "end": 18, "label": "尺寸公差"}, {"id": 5, "start": 21, "end": 22, "label": "工艺"}], "relations": [], "meta": {}}
+{"text": "先钻5×10.2底孔再扩至14.0。", "spans": [{"id": 1, "start": 1, "end": 2, "label": "工艺"}, {"id": 2, "start": 2, "end": 8, "label": "尺寸公差"}, {"id": 3, "start": 11, "end": 12, "label": "工艺"}, {"id": 4, "start": 13, "end": 17, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "转序后执行OP20钻3×6.2通孔，随后OP30攻丝M8×1.25，表面粗糙度Ra 1.6μm。", "spans": [{"id": 1, "start": 4, "end": 8, "label": "工序编号"}, {"id": 2, "start": 10, "end": 11, "label": "工艺"}, {"id": 3, "start": 11, "end": 15, "label": "尺寸公差"}, {"id": 4, "start": 21, "end": 25, "label": "工序编号"}, {"id": 5, "start": 26, "end": 28, "label": "工艺"}, {"id": 6, "start": 28, "end": 35, "label": "尺寸公差"}, {"id": 7, "start": 41, "end": 49, "label": "粗糙度"}], "relations": [], "meta": {}}
+{"text": "钻 5.2×11.0 通孔，共计8处。", "spans": [{"id": 1, "start": 0, "end": 1, "label": "工艺"}, {"id": 2, "start": 2, "end": 9, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "钻底孔后攻丝M10×1.5。", "spans": [{"id": 1, "start": 0, "end": 1, "label": "工艺"}, {"id": 2, "start": 4, "end": 6, "label": "工艺"}, {"id": 3, "start": 6, "end": 13, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "扩2.5×4.8沉孔，深度5mm。", "spans": [{"id": 1, "start": 0, "end": 1, "label": "工艺"}, {"id": 2, "start": 1, "end": 8, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "钻M8×125底孔后攻丝。", "spans": [{"id": 1, "start": 0, "end": 1, "label": "工艺"}, {"id": 2, "start": 1, "end": 7, "label": "尺寸公差"}, {"id": 3, "start": 10, "end": 12, "label": "工艺"}], "relations": [], "meta": {}}
+{"text": "该零件上需加工2.8×5.2的通孔。", "spans": [{"id": 1, "start": 7, "end": 14, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "工序流程：铣基准面、钻底孔、扩孔、铰孔。", "spans": [{"id": 1, "start": 5, "end": 6, "label": "工艺"}, {"id": 2, "start": 9, "end": 10, "label": "工艺"}, {"id": 3, "start": 13, "end": 14, "label": "工艺"}, {"id": 4, "start": 17, "end": 18, "label": "工艺"}], "relations": [], "meta": {}}
+{"text": "铰 3.8×7.0 的定位孔。", "spans": [{"id": 1, "start": 0, "end": 1, "label": "工艺"}, {"id": 2, "start": 2, "end": 8, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "OP05 铰 8×14.3 孔。", "spans": [{"id": 1, "start": 0, "end": 4, "label": "工序编号"}, {"id": 2, "start": 5, "end": 6, "label": "工艺"}, {"id": 3, "start": 7, "end": 13, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "加工完成后清理切屑并涂防锈油。", "spans": [], "relations": [], "meta": {}}
+{"text": "先钻后扩，保证孔径精度。", "spans": [{"id": 1, "start": 1, "end": 2, "label": "工艺"}, {"id": 2, "start": 3, "end": 4, "label": "工艺"}], "relations": [], "meta": {}}
+{"text": "孔径5.2×11.0的公差为±0.05mm。", "spans": [{"id": 1, "start": 2, "end": 10, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "钻φ8×14.3深孔，使用枪钻冷却。", "spans": [{"id": 1, "start": 0, "end": 1, "label": "工艺"}, {"id": 2, "start": 2, "end": 8, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "使用扩孔钻扩2.5×4.8孔。", "spans": [{"id": 1, "start": 4, "end": 5, "label": "工艺"}, {"id": 2, "start": 6, "end": 13, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "钻Φ3×5.5的定位孔。", "spans": [{"id": 1, "start": 0, "end": 1, "label": "工艺"}, {"id": 2, "start": 2, "end": 7, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "钻模板上有5×9.0的导向孔。", "spans": [{"id": 1, "start": 5, "end": 10, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "铰M12×1.75螺纹底孔。", "spans": [{"id": 1, "start": 0, "end": 1, "label": "工艺"}, {"id": 2, "start": 2, "end": 9, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "攻丝M16×2.0螺纹孔。", "spans": [{"id": 1, "start": 0, "end": 2, "label": "工艺"}, {"id": 2, "start": 2, "end": 9, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "钻Φ5×10.2底孔后转入下道工序。", "spans": [{"id": 1, "start": 0, "end": 1, "label": "工艺"}, {"id": 2, "start": 1, "end": 8, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "铣端面后钻8×14.3孔并攻丝M8×125。", "spans": [{"id": 1, "start": 4, "end": 5, "label": "工艺"}, {"id": 2, "start": 13, "end": 15, "label": "工艺"}, {"id": 3, "start": 5, "end": 11, "label": "尺寸公差"}, {"id": 4, "start": 0, "end": 1, "label": "工艺"}, {"id": 5, "start": 15, "end": 21, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "钻4.5×9.0通孔，孔深25mm。", "spans": [{"id": 1, "start": 1, "end": 8, "label": "尺寸公差"}, {"id": 2, "start": 0, "end": 1, "label": "工艺"}], "relations": [], "meta": {}}
+{"text": "更换刀具后需重新对刀。", "spans": [], "relations": [], "meta": {}}
+{"text": "加工6×9.5沉头孔，深度12mm。", "spans": [{"id": 1, "start": 2, "end": 7, "label": "尺寸公差"}, {"id": 2, "start": 0, "end": 2, "label": "工艺"}], "relations": [], "meta": {}}
+{"text": "OP35 扩 3.8×7.2 孔。", "spans": [{"id": 1, "start": 0, "end": 4, "label": "工序编号"}, {"id": 2, "start": 5, "end": 6, "label": "工艺"}, {"id": 3, "start": 7, "end": 14, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "钻8×14.3底孔后转入攻丝工序。", "spans": [{"id": 1, "start": 0, "end": 1, "label": "工艺"}, {"id": 2, "start": 1, "end": 7, "label": "尺寸公差"}, {"id": 3, "start": 12, "end": 14, "label": "工艺"}], "relations": [], "meta": {}}
+{"text": "使用铰刀铰2.5×4.8孔。", "spans": [{"id": 1, "start": 2, "end": 3, "label": "工艺"}, {"id": 2, "start": 5, "end": 12, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "该工序的加工质量直接影响产品性能。", "spans": [], "relations": [], "meta": {}}
+{"text": "镗3×5.5内孔至尺寸。", "spans": [{"id": 1, "start": 0, "end": 1, "label": "工艺"}, {"id": 2, "start": 1, "end": 6, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "钻4×6.8通孔与攻丝M8×125为连续工序。", "spans": [{"id": 1, "start": 0, "end": 1, "label": "工艺"}, {"id": 2, "start": 1, "end": 6, "label": "尺寸公差"}, {"id": 3, "start": 9, "end": 11, "label": "工艺"}, {"id": 4, "start": 11, "end": 17, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "工序流程：钻、扩、铰、攻丝四道工序。", "spans": [{"id": 1, "start": 5, "end": 6, "label": "工艺"}, {"id": 2, "start": 7, "end": 8, "label": "工艺"}, {"id": 3, "start": 9, "end": 10, "label": "工艺"}, {"id": 4, "start": 11, "end": 13, "label": "工艺"}], "relations": [], "meta": {}}
+{"text": "在数控钻床上钻5×10.2阵列孔。", "spans": [{"id": 1, "start": 3, "end": 4, "label": "工艺"}, {"id": 2, "start": 7, "end": 13, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "通孔尺寸6×12.7，需倒角。", "spans": [{"id": 1, "start": 4, "end": 10, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "重点进行OP02钻6×12.7通孔与OP35攻丝M16×2.0。", "spans": [{"id": 1, "start": 0, "end": 4, "label": "工序编号"}, {"id": 2, "start": 6, "end": 7, "label": "工艺"}, {"id": 3, "start": 7, "end": 13, "label": "尺寸公差"}, {"id": 4, "start": 17, "end": 21, "label": "工序编号"}, {"id": 5, "start": 22, "end": 24, "label": "工艺"}, {"id": 6, "start": 24, "end": 31, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "外购件入库前须经检验合格。", "spans": [], "relations": [], "meta": {}}
+{"text": "OP30攻丝M8×125，使用螺旋槽丝锥加工。", "spans": [{"id": 1, "start": 0, "end": 4, "label": "工序编号"}, {"id": 2, "start": 4, "end": 6, "label": "工艺"}, {"id": 3, "start": 6, "end": 12, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "磨外圆后铰内孔。", "spans": [{"id": 1, "start": 4, "end": 5, "label": "工艺"}, {"id": 2, "start": 0, "end": 1, "label": "工艺"}], "relations": [], "meta": {}}
+{"text": "精镗Φ4.5×8.5轴承孔。", "spans": [{"id": 1, "start": 1, "end": 2, "label": "工艺"}, {"id": 2, "start": 3, "end": 10, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "按图样要求钻Φ5.2×8.8通孔，攻丝M6×1.0。", "spans": [{"id": 1, "start": 5, "end": 6, "label": "工艺"}, {"id": 2, "start": 6, "end": 14, "label": "尺寸公差"}, {"id": 3, "start": 17, "end": 19, "label": "工艺"}, {"id": 4, "start": 19, "end": 25, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "铰3.2×6.5孔至H7精度。", "spans": [{"id": 1, "start": 0, "end": 1, "label": "工艺"}, {"id": 2, "start": 1, "end": 8, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "OP10：钻4×6.8通孔8处；OP20：攻丝M8×1.25，螺纹精度6H。", "spans": [{"id": 1, "start": 0, "end": 4, "label": "工序编号"}, {"id": 2, "start": 6, "end": 7, "label": "工艺"}, {"id": 3, "start": 7, "end": 12, "label": "尺寸公差"}, {"id": 4, "start": 18, "end": 22, "label": "工序编号"}, {"id": 5, "start": 24, "end": 26, "label": "工艺"}, {"id": 6, "start": 26, "end": 33, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "钻4.5×8.5底孔后转入攻丝工序。", "spans": [{"id": 1, "start": 0, "end": 1, "label": "工艺"}, {"id": 2, "start": 1, "end": 8, "label": "尺寸公差"}, {"id": 3, "start": 13, "end": 15, "label": "工艺"}], "relations": [], "meta": {}}
+{"text": "磨外圆后铰内孔。", "spans": [{"id": 1, "start": 4, "end": 5, "label": "工艺"}, {"id": 2, "start": 0, "end": 1, "label": "工艺"}], "relations": [], "meta": {}}
+{"text": "OP20钻3.2×6.5通孔与OP02攻丝M10×1.5。", "spans": [{"id": 1, "start": 0, "end": 4, "label": "工序编号"}, {"id": 2, "start": 15, "end": 19, "label": "工序编号"}, {"id": 3, "start": 4, "end": 5, "label": "工艺"}, {"id": 4, "start": 5, "end": 12, "label": "尺寸公差"}, {"id": 5, "start": 19, "end": 21, "label": "工艺"}, {"id": 6, "start": 22, "end": 28, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "使用铰刀铰4×6.8孔。", "spans": [{"id": 1, "start": 2, "end": 3, "label": "工艺"}, {"id": 2, "start": 5, "end": 10, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "钻 2.5×4.8 后攻丝 M6×1.0。", "spans": [{"id": 1, "start": 0, "end": 1, "label": "工艺"}, {"id": 2, "start": 2, "end": 8, "label": "尺寸公差"}, {"id": 3, "start": 11, "end": 13, "label": "工艺"}, {"id": 4, "start": 14, "end": 20, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "通孔尺寸2.5×4.8，需倒角。", "spans": [{"id": 1, "start": 4, "end": 11, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "扩孔至最终尺寸后检测。", "spans": [{"id": 1, "start": 0, "end": 1, "label": "工艺"}], "relations": [], "meta": {}}
+{"text": "攻丝前检查底孔直径。", "spans": [{"id": 1, "start": 0, "end": 2, "label": "工艺"}], "relations": [], "meta": {}}
+{"text": "钻后铰孔，保证表面粗糙度。", "spans": [{"id": 1, "start": 0, "end": 1, "label": "工艺"}, {"id": 2, "start": 2, "end": 3, "label": "工艺"}], "relations": [], "meta": {}}
+{"text": "扩孔至最终尺寸后检测。", "spans": [{"id": 1, "start": 0, "end": 1, "label": "工艺"}], "relations": [], "meta": {}}
+{"text": "钻通孔并倒角。", "spans": [{"id": 1, "start": 0, "end": 1, "label": "工艺"}], "relations": [], "meta": {}}
+{"text": "先钻6.8×1.25底孔，再攻丝M8×125。", "spans": [{"id": 1, "start": 2, "end": 3, "label": "工艺"}, {"id": 2, "start": 3, "end": 11, "label": "尺寸公差"}, {"id": 3, "start": 15, "end": 17, "label": "工艺"}, {"id": 4, "start": 17, "end": 23, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "铰Φ4.5×8.5的销孔。", "spans": [{"id": 1, "start": 0, "end": 1, "label": "工艺"}, {"id": 2, "start": 2, "end": 9, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "OP30 镗 6×12.7 孔。", "spans": [{"id": 1, "start": 0, "end": 4, "label": "工序编号"}, {"id": 2, "start": 5, "end": 6, "label": "工艺"}, {"id": 3, "start": 7, "end": 13, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "要求钻出3.2×6.5的定位孔。", "spans": [{"id": 1, "start": 4, "end": 11, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "使用专用量具进行检测。", "spans": [], "relations": [], "meta": {}}
+{"text": "孔位尺寸为3×6.2，共4处均布。", "spans": [{"id": 1, "start": 5, "end": 10, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "工序流程：钻、扩、铰、攻丝四道工序。", "spans": [{"id": 1, "start": 5, "end": 6, "label": "工艺"}, {"id": 2, "start": 7, "end": 8, "label": "工艺"}, {"id": 3, "start": 9, "end": 10, "label": "工艺"}, {"id": 4, "start": 11, "end": 13, "label": "工艺"}], "relations": [], "meta": {}}
+{"text": "铰M16×2.0螺纹底孔。", "spans": [{"id": 1, "start": 0, "end": 1, "label": "工艺"}, {"id": 2, "start": 1, "end": 8, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "使用Φ3×7.2的钻头进行加工。", "spans": [{"id": 1, "start": 3, "end": 8, "label": "尺寸公差"}, {"id": 2, "start": 9, "end": 10, "label": "工艺"}], "relations": [], "meta": {}}
+{"text": "扩Φ4.5×8.5孔并倒角。", "spans": [{"id": 1, "start": 0, "end": 1, "label": "工艺"}, {"id": 2, "start": 2, "end": 9, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "铰Φ5×10.2的销孔。", "spans": [{"id": 1, "start": 0, "end": 1, "label": "工艺"}, {"id": 2, "start": 2, "end": 8, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "使用Φ4.3×6.8的钻头进行加工。", "spans": [{"id": 1, "start": 3, "end": 10, "label": "尺寸公差"}, {"id": 2, "start": 11, "end": 12, "label": "工艺"}], "relations": [], "meta": {}}
+{"text": "重点进行OP15镗5×10.2内孔与OP40攻丝M12×1.75。", "spans": [{"id": 1, "start": 0, "end": 4, "label": "工序编号"}, {"id": 2, "start": 6, "end": 7, "label": "工艺"}, {"id": 3, "start": 7, "end": 13, "label": "尺寸公差"}, {"id": 4, "start": 17, "end": 21, "label": "工序编号"}, {"id": 5, "start": 22, "end": 24, "label": "工艺"}, {"id": 6, "start": 24, "end": 32, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "工作环境温度控制在20±2℃范围内。", "spans": [], "relations": [], "meta": {}}
+{"text": "孔径5.1×10.8的公差为±0.05mm。", "spans": [{"id": 1, "start": 2, "end": 10, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "不合格品需隔离存放并标识。", "spans": [], "relations": [], "meta": {}}
+{"text": "OP25 攻丝 M20×2.5，使用螺旋槽丝锥。", "spans": [{"id": 1, "start": 0, "end": 4, "label": "工序编号"}, {"id": 2, "start": 5, "end": 7, "label": "工艺"}, {"id": 3, "start": 8, "end": 15, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "镗 6.2×12.5 内孔，使用金刚石镗刀。", "spans": [{"id": 1, "start": 0, "end": 1, "label": "工艺"}, {"id": 2, "start": 2, "end": 10, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "OP30 攻丝 M5×0.8。", "spans": [{"id": 1, "start": 0, "end": 4, "label": "工序编号"}, {"id": 2, "start": 5, "end": 7, "label": "工艺"}, {"id": 3, "start": 8, "end": 14, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "OP02 扩 8×14.3 孔。", "spans": [{"id": 1, "start": 0, "end": 4, "label": "工序编号"}, {"id": 2, "start": 5, "end": 6, "label": "工艺"}, {"id": 3, "start": 7, "end": 13, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "钻M5×0.8底孔，攻丝前工序。", "spans": [{"id": 1, "start": 0, "end": 1, "label": "工艺"}, {"id": 2, "start": 1, "end": 7, "label": "尺寸公差"}, {"id": 3, "start": 10, "end": 12, "label": "工艺"}], "relations": [], "meta": {}}
+{"text": "铰5×11.0孔至H7精度。", "spans": [{"id": 1, "start": 0, "end": 1, "label": "工艺"}, {"id": 2, "start": 1, "end": 7, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "扩 6×9.5 沉头孔，深度8mm。", "spans": [{"id": 1, "start": 0, "end": 1, "label": "工艺"}, {"id": 2, "start": 2, "end": 7, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "OP30 攻丝 M8×1.25，使用螺旋槽丝锥。", "spans": [{"id": 1, "start": 0, "end": 4, "label": "工序编号"}, {"id": 2, "start": 5, "end": 7, "label": "工艺"}, {"id": 3, "start": 8, "end": 15, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "攻丝M16×2.0螺纹孔。", "spans": [{"id": 1, "start": 0, "end": 2, "label": "工艺"}, {"id": 2, "start": 3, "end": 9, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "加工6.2×12.5沉头孔，深度12mm。", "spans": [{"id": 1, "start": 2, "end": 10, "label": "尺寸公差"}, {"id": 2, "start": 0, "end": 2, "label": "工艺"}], "relations": [], "meta": {}}
+{"text": "生产批号与日期标识清晰可见。", "spans": [], "relations": [], "meta": {}}
+{"text": "使用金刚石镗刀镗5×11.0孔。", "spans": [{"id": 1, "start": 5, "end": 6, "label": "工艺"}, {"id": 2, "start": 8, "end": 14, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "夹具需定期校准以确保定位精度。", "spans": [], "relations": [], "meta": {}}
+{"text": "扩Φ4.5×8.5孔并倒角。", "spans": [{"id": 1, "start": 0, "end": 1, "label": "工艺"}, {"id": 2, "start": 2, "end": 9, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "先钻8×14.3底孔，再扩孔至最终尺寸。", "spans": [{"id": 1, "start": 2, "end": 8, "label": "尺寸公差"}, {"id": 2, "start": 1, "end": 2, "label": "工艺"}], "relations": [], "meta": {}}
+{"text": "铣端面后钻4×6.8孔并攻丝M12×1.75。", "spans": [{"id": 1, "start": 4, "end": 5, "label": "工艺"}, {"id": 2, "start": 12, "end": 14, "label": "工艺"}, {"id": 3, "start": 5, "end": 10, "label": "尺寸公差"}, {"id": 4, "start": 0, "end": 1, "label": "工艺"}, {"id": 5, "start": 15, "end": 22, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "粗镗后精镗至最终尺寸。", "spans": [{"id": 1, "start": 1, "end": 2, "label": "工艺"}], "relations": [], "meta": {}}
+{"text": "使用扩孔钻扩2.5×4.8孔。", "spans": [{"id": 1, "start": 4, "end": 5, "label": "工艺"}, {"id": 2, "start": 6, "end": 13, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "重点进行 OP30 钻 5×11.0 通孔，深度30mm。", "spans": [{"id": 1, "start": 5, "end": 9, "label": "工序编号"}, {"id": 2, "start": 10, "end": 11, "label": "工艺"}, {"id": 3, "start": 12, "end": 18, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "在工件上钻4×5.5的贯穿孔。", "spans": [{"id": 1, "start": 5, "end": 10, "label": "尺寸公差"}, {"id": 2, "start": 4, "end": 5, "label": "工艺"}], "relations": [], "meta": {}}
+{"text": "3×8.5孔使用硬质合金钻头加工。", "spans": [{"id": 1, "start": 0, "end": 5, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "首件检验孔径5×11.5，结果合格。", "spans": [{"id": 1, "start": 6, "end": 12, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "先钻4×7.0底孔，再扩孔至最终尺寸。", "spans": [{"id": 1, "start": 2, "end": 7, "label": "尺寸公差"}, {"id": 2, "start": 1, "end": 2, "label": "工艺"}], "relations": [], "meta": {}}
+{"text": "铰 5.5×10.0 销孔至H7精度。", "spans": [{"id": 1, "start": 0, "end": 1, "label": "工艺"}, {"id": 2, "start": 2, "end": 9, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "该零件上需加工4.5×8.5的通孔。", "spans": [{"id": 1, "start": 7, "end": 14, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "钻Φ5×10.2的定位孔。", "spans": [{"id": 1, "start": 0, "end": 1, "label": "工艺"}, {"id": 2, "start": 2, "end": 8, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "攻丝前检查底孔直径。", "spans": [{"id": 1, "start": 0, "end": 2, "label": "工艺"}], "relations": [], "meta": {}}
+{"text": "重点进行 OP25 钻 3.2×6.5 通孔，深度30mm。", "spans": [{"id": 1, "start": 5, "end": 9, "label": "工序编号"}, {"id": 2, "start": 10, "end": 11, "label": "工艺"}, {"id": 3, "start": 12, "end": 19, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "车外圆后镗内孔再攻丝。", "spans": [{"id": 1, "start": 4, "end": 5, "label": "工艺"}, {"id": 2, "start": 8, "end": 10, "label": "工艺"}, {"id": 3, "start": 0, "end": 1, "label": "工艺"}], "relations": [], "meta": {}}
+{"text": "攻丝 M5×0.8 螺纹孔，深度15mm。", "spans": [{"id": 1, "start": 0, "end": 2, "label": "工艺"}, {"id": 2, "start": 3, "end": 9, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "工序要求加工3.5×7.5的孔。", "spans": [{"id": 1, "start": 6, "end": 13, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "钻模板孔位5×11.0。", "spans": [{"id": 1, "start": 5, "end": 11, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "攻丝 M14×1.5 通孔螺纹。", "spans": [{"id": 1, "start": 0, "end": 2, "label": "工艺"}, {"id": 2, "start": 3, "end": 10, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "使用金刚石镗刀镗3.2×6.5孔。", "spans": [{"id": 1, "start": 5, "end": 6, "label": "工艺"}, {"id": 2, "start": 8, "end": 15, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "钻底孔后攻丝M14×1.5。", "spans": [{"id": 1, "start": 0, "end": 1, "label": "工艺"}, {"id": 2, "start": 4, "end": 6, "label": "工艺"}, {"id": 3, "start": 6, "end": 13, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "钻后铰孔，保证表面粗糙度。", "spans": [{"id": 1, "start": 0, "end": 1, "label": "工艺"}, {"id": 2, "start": 2, "end": 3, "label": "工艺"}], "relations": [], "meta": {}}
+{"text": "先钻后扩，保证孔径精度。", "spans": [{"id": 1, "start": 1, "end": 2, "label": "工艺"}, {"id": 2, "start": 3, "end": 4, "label": "工艺"}], "relations": [], "meta": {}}
+{"text": "在工件上钻3.8×7.0的贯穿孔。", "spans": [{"id": 1, "start": 5, "end": 12, "label": "尺寸公差"}, {"id": 2, "start": 4, "end": 5, "label": "工艺"}], "relations": [], "meta": {}}
+{"text": "钻模板孔位8×14.3。", "spans": [{"id": 1, "start": 5, "end": 11, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "攻丝M8×125深度25mm后转入下一道工序。", "spans": [{"id": 1, "start": 0, "end": 2, "label": "工艺"}, {"id": 2, "start": 2, "end": 8, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "先钻6×12.7底孔再扩至14.0。", "spans": [{"id": 1, "start": 1, "end": 2, "label": "工艺"}, {"id": 2, "start": 2, "end": 8, "label": "尺寸公差"}, {"id": 3, "start": 11, "end": 12, "label": "工艺"}, {"id": 4, "start": 13, "end": 17, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "冷却液浓度需定期检测并记录。", "spans": [], "relations": [], "meta": {}}
+{"text": "重点进行OP05扩2.5×4.8沉孔与OP30铰M6×1.0。", "spans": [{"id": 1, "start": 0, "end": 4, "label": "工序编号"}, {"id": 2, "start": 6, "end": 7, "label": "工艺"}, {"id": 3, "start": 7, "end": 13, "label": "尺寸公差"}, {"id": 4, "start": 17, "end": 21, "label": "工序编号"}, {"id": 5, "start": 22, "end": 23, "label": "工艺"}, {"id": 6, "start": 23, "end": 28, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "按工艺规程，OP15钻2.8×5.2定位孔后转入OP25攻丝M10×1.5。", "spans": [{"id": 1, "start": 5, "end": 9, "label": "工序编号"}, {"id": 2, "start": 11, "end": 12, "label": "工艺"}, {"id": 3, "start": 12, "end": 18, "label": "尺寸公差"}, {"id": 4, "start": 26, "end": 30, "label": "工序编号"}, {"id": 5, "start": 31, "end": 33, "label": "工艺"}, {"id": 6, "start": 33, "end": 40, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "攻丝 M8×125 深度25mm。", "spans": [{"id": 1, "start": 0, "end": 2, "label": "工艺"}, {"id": 2, "start": 4, "end": 9, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "OP15 攻丝 M12×1.75。", "spans": [{"id": 1, "start": 0, "end": 4, "label": "工序编号"}, {"id": 2, "start": 5, "end": 7, "label": "工艺"}, {"id": 3, "start": 8, "end": 16, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "扩6×12.7沉孔，深度5mm。", "spans": [{"id": 1, "start": 0, "end": 1, "label": "工艺"}, {"id": 2, "start": 1, "end": 7, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "镗5×11.0内孔至尺寸。", "spans": [{"id": 1, "start": 0, "end": 1, "label": "工艺"}, {"id": 2, "start": 1, "end": 7, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "OP20 钻 4.5×8.5 定位孔。", "spans": [{"id": 1, "start": 0, "end": 4, "label": "工序编号"}, {"id": 2, "start": 6, "end": 7, "label": "工艺"}, {"id": 3, "start": 8, "end": 15, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "检测4×6.8孔的位置度公差。", "spans": [{"id": 1, "start": 2, "end": 7, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "操作者需持证上岗并穿戴防护用品。", "spans": [], "relations": [], "meta": {}}
+{"text": "镗 8×14.3 轴承孔至IT7级。", "spans": [{"id": 1, "start": 0, "end": 1, "label": "工艺"}, {"id": 2, "start": 2, "end": 8, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "镗M16×2.0孔保证同轴度。", "spans": [{"id": 1, "start": 0, "end": 1, "label": "工艺"}, {"id": 2, "start": 1, "end": 8, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "在数控钻床上钻8×14.3阵列孔。", "spans": [{"id": 1, "start": 3, "end": 4, "label": "工艺"}, {"id": 2, "start": 7, "end": 13, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "车外圆后镗内孔再攻丝。", "spans": [{"id": 1, "start": 4, "end": 5, "label": "工艺"}, {"id": 2, "start": 8, "end": 10, "label": "工艺"}, {"id": 3, "start": 0, "end": 1, "label": "工艺"}], "relations": [], "meta": {}}
+{"text": "OP20 铰 6×12.7 孔。", "spans": [{"id": 1, "start": 0, "end": 4, "label": "工序编号"}, {"id": 2, "start": 5, "end": 6, "label": "工艺"}, {"id": 3, "start": 7, "end": 13, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "先钻后铰，确保配合精度。", "spans": [{"id": 1, "start": 1, "end": 2, "label": "工艺"}, {"id": 2, "start": 3, "end": 4, "label": "工艺"}], "relations": [], "meta": {}}
+{"text": "OP10钻4×6.8通孔与OP05攻丝M14×1.5。", "spans": [{"id": 1, "start": 0, "end": 4, "label": "工序编号"}, {"id": 2, "start": 13, "end": 17, "label": "工序编号"}, {"id": 3, "start": 4, "end": 5, "label": "工艺"}, {"id": 4, "start": 5, "end": 10, "label": "尺寸公差"}, {"id": 5, "start": 17, "end": 19, "label": "工艺"}, {"id": 6, "start": 20, "end": 26, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "OP15 钻 3×5.5 通孔，孔深20mm。", "spans": [{"id": 1, "start": 0, "end": 4, "label": "工序编号"}, {"id": 2, "start": 6, "end": 7, "label": "工艺"}, {"id": 3, "start": 8, "end": 13, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "精镗Φ2.5×4.8轴承孔。", "spans": [{"id": 1, "start": 1, "end": 2, "label": "工艺"}, {"id": 2, "start": 3, "end": 10, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "OP08 钻 4.5×8.5 孔。", "spans": [{"id": 1, "start": 0, "end": 4, "label": "工序编号"}, {"id": 2, "start": 5, "end": 6, "label": "工艺"}, {"id": 3, "start": 7, "end": 14, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "攻丝 M24×3 深度25mm。", "spans": [{"id": 1, "start": 0, "end": 2, "label": "工艺"}, {"id": 2, "start": 4, "end": 8, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "OP02 镗 3.2×6.5 孔。", "spans": [{"id": 1, "start": 0, "end": 4, "label": "工序编号"}, {"id": 2, "start": 5, "end": 6, "label": "工艺"}, {"id": 3, "start": 7, "end": 14, "label": "尺寸公差"}], "relations": [], "meta": {}}
+{"text": "粗镗后精镗至最终尺寸。", "spans": [{"id": 1, "start": 1, "end": 2, "label": "工艺"}], "relations": [], "meta": {}}
+{"text": "首件检验合格后方可批量生产。", "spans": [], "relations": [], "meta": {}}
+{"text": "镗M24×3孔保证同轴度。", "spans": [{"id": 1, "start": 0, "end": 1, "label": "工艺"}, {"id": 2, "start": 1, "end": 6, "label": "尺寸公差"}], "relations": [], "meta": {}}

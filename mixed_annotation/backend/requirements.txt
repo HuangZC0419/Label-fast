@@ -1,0 +1,5 @@
+# 主应用后端依赖（唯一运行环境：conda 环境 CFwin11 / Python 3.12）
+fastapi>=0.115
+uvicorn[standard]>=0.30
+python-multipart>=0.0.9
+httpx>=0.27

@@ -15,6 +15,9 @@ const API_BASE = '/minimind/api'
 /** 新建问答草稿时使用的默认用户指令。 */
 export const DEFAULT_USER_PROMPT = '详细描述这张图片。'
 
+/** 默认示例项目名称；其图片目录存在时由后端自动登记到项目列表。 */
+export const DEFAULT_EXAMPLE_PROJECT_NAME = '示例项目'
+
 /** 框选标签配色：低饱和暖色，按标签顺序循环使用，与 Ink & Signal 画布协调。 */
 export const LABEL_COLORS = [
   '#EFB7A3',
@@ -653,6 +656,26 @@ async function switchProject(id: string): Promise<boolean> {
   return true
 }
 
+/**
+ * 未选中任何项目时自动选中默认示例项目。
+ * 仅在页面挂载时调用，不打断用户已手动选择的项目。
+ */
+async function ensureDefaultProject(): Promise<void> {
+  if (currentProjectId.value) return
+
+  const example = projects.value.find(
+    (project) =>
+      project.name === DEFAULT_EXAMPLE_PROJECT_NAME ||
+      project.project_dir
+        .replace(/\\/g, '/')
+        .replace(/\/+$/, '')
+        .endsWith(`/${DEFAULT_EXAMPLE_PROJECT_NAME}`),
+  )
+  if (!example) return
+
+  await switchProject(example.id)
+}
+
 async function deleteProject(): Promise<void> {
   if (!currentProjectId.value) {
     toast('请先选择一个项目', 'info')
@@ -900,6 +923,7 @@ export function useImageProject() {
 
     // 方法与工具
     fetchProjects,
+    ensureDefaultProject,
     createProject,
     switchProject,
     persistCurrentProject,

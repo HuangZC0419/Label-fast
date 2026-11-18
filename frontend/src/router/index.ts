@@ -45,6 +45,24 @@ const router = createRouter({
           component: () => import('../views/QaAnnotationView.vue'),
           meta: { title: '大模型问答标注' },
         },
+        {
+          path: 'classify',
+          name: 'standard-classify',
+          component: () => import('../modules/gb-fenlei/views/StandardClassifyView.vue'),
+          meta: { title: '航空标准分类' },
+        },
+        {
+          path: 'mixed',
+          name: 'mixed-annotation',
+          component: () => import('../modules/mixed-annotation/views/MixedAnnotationView.vue'),
+          meta: { title: '混合标注' },
+        },
+        {
+          path: 'model',
+          name: 'model-annotation',
+          component: () => import('../modules/model-annotation/views/ModelAnnotationView.vue'),
+          meta: { title: '模型标注' },
+        },
       ],
     },
     {
@@ -74,7 +92,7 @@ router.beforeEach(async (to) => {
 
 router.afterEach((to) => {
   const title = typeof to.meta.title === 'string' ? to.meta.title : ''
-  document.title = title ? `${title} · LabelFast` : 'LabelFast 标注平台'
+  document.title = title ? `${title} · 数据标注与分类工具` : '数据标注与分类工具 标注平台'
 })
 
 export default router

@@ -161,7 +161,7 @@ _configure_frontend_static()
 
 @app.get("/")
 def read_root():
-    return {"message": "Label Fast Backend is running. Visit /api/health to check status."}
+    return {"message": "数据标注与分类工具 Backend is running. Visit /api/health to check status."}
 
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon():
@@ -338,7 +338,7 @@ if __name__ == "__main__":
     import argparse
     import socket
 
-    parser = argparse.ArgumentParser(description="Label Fast Backend Server")
+    parser = argparse.ArgumentParser(description="数据标注与分类工具 Backend Server")
     parser.add_argument("--port", type=int, default=3002, help="服务端口 (默认: 3002)")
     args = parser.parse_args()
 
@@ -354,7 +354,7 @@ if __name__ == "__main__":
     port = args.port
     max_attempts = 20
 
-    print("Starting Label Fast Backend...")
+    print("Starting 数据标注与分类工具 Backend...")
     for attempt in range(max_attempts):
         if is_port_available(port):
             print(f"Access the API at: http://localhost:{port}")

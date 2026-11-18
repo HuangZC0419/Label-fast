@@ -1,0 +1,429 @@
+/* ============================================================
+   Rendered Markdown — Ink & Signal
+   仅作用于 .markdown-content，避免影响应用外壳。
+   ============================================================ */
+
+.mx-root .markdown-content {
+  --md-paper: var(--surface-raised, #fffdf9);
+  --md-ink: var(--ink, #17181b);
+  --md-ink-2: var(--ink-2, #3e4147);
+  --md-ink-3: var(--ink-3, #6e727a);
+  --md-ink-4: var(--ink-4, #9a9da3);
+  --md-line: var(--line, #e2dccf);
+  --md-line-strong: var(--line-strong, #d2caba);
+  --md-sunken: var(--surface-sunken, #f2eee6);
+  --md-signal: var(--signal, #e4572e);
+  --md-signal-deep: var(--signal-deep, #c44722);
+  --md-signal-soft: var(--signal-soft, #fbe8e1);
+  --md-signal-ink: var(--signal-ink, #8e2f14);
+  --md-mono: var(--font-mono, 'Geist Mono', ui-monospace, Consolas, monospace);
+  --md-display: var(--font-display, 'Instrument Serif', Georgia, serif);
+  --md-sans: var(--font-sans, 'Geist', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif);
+
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  padding: clamp(24px, 3.2vw, 48px) clamp(22px, 4.2vw, 58px) clamp(38px, 5vw, 64px);
+  color: var(--md-ink-2);
+  font-family: var(--md-sans);
+  font-size: 15.5px;
+  line-height: 1.86;
+  overflow-wrap: anywhere;
+  text-rendering: optimizeLegibility;
+}
+
+.mx-root .markdown-content > :first-child {
+  margin-top: 0 !important;
+}
+
+.mx-root .markdown-content > :last-child {
+  margin-bottom: 0 !important;
+}
+
+/* ---------- 标题 ---------- */
+.mx-root .markdown-content h1,
+.mx-root .markdown-content h2,
+.mx-root .markdown-content h3,
+.mx-root .markdown-content h4,
+.mx-root .markdown-content h5,
+.mx-root .markdown-content h6 {
+  margin: 1.65em 0 0.65em;
+  color: var(--md-ink);
+  line-height: 1.3;
+  letter-spacing: -0.012em;
+  scroll-margin-top: 20px;
+}
+
+.mx-root .markdown-content h1 {
+  padding-bottom: 0.42em;
+  border-bottom: 1px solid var(--md-line);
+  font-family: var(--md-display);
+  font-size: clamp(28px, 2.6vw, 38px);
+  font-weight: 400;
+  letter-spacing: -0.02em;
+}
+
+.mx-root .markdown-content h2 {
+  font-family: var(--md-display);
+  font-size: clamp(23px, 2vw, 29px);
+  font-weight: 400;
+  letter-spacing: -0.015em;
+}
+
+.mx-root .markdown-content h3 {
+  font-size: 18px;
+  font-weight: 650;
+}
+
+.mx-root .markdown-content h4 {
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.mx-root .markdown-content h5,
+.mx-root .markdown-content h6 {
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  color: var(--md-ink-2);
+}
+
+.mx-root .markdown-content h6 {
+  color: var(--md-ink-3);
+}
+
+/* ---------- 正文 ---------- */
+.mx-root .markdown-content p {
+  margin: 0 0 1.02em;
+}
+
+.mx-root .markdown-content strong,
+.mx-root .markdown-content b {
+  font-weight: 650;
+  color: var(--md-ink);
+}
+
+.mx-root .markdown-content em,
+.mx-root .markdown-content i {
+  font-style: italic;
+}
+
+.mx-root .markdown-content del {
+  color: var(--md-ink-4);
+}
+
+.mx-root .markdown-content a {
+  color: var(--md-signal-deep);
+  text-decoration: underline;
+  text-decoration-color: rgba(196, 71, 34, 0.32);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  transition: color 160ms var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1));
+}
+
+.mx-root .markdown-content a:hover {
+  color: var(--md-signal);
+  text-decoration-color: currentColor;
+}
+
+.mx-root .markdown-content hr {
+  height: 1px;
+  margin: 2.2em 0;
+  border: 0;
+  background: var(--md-line);
+}
+
+/* ---------- 列表 ---------- */
+.mx-root .markdown-content ul,
+.mx-root .markdown-content ol {
+  margin: 0 0 1.05em;
+  padding-left: 1.55em;
+}
+
+.mx-root .markdown-content li {
+  margin: 0.28em 0;
+  padding-left: 0.18em;
+}
+
+.mx-root .markdown-content li::marker {
+  color: var(--md-ink-4);
+}
+
+.mx-root .markdown-content li > p {
+  margin: 0.35em 0;
+}
+
+.mx-root .markdown-content li > ul,
+.mx-root .markdown-content li > ol {
+  margin-top: 0.3em;
+  margin-bottom: 0.4em;
+}
+
+.mx-root .markdown-content input[type='checkbox'] {
+  width: 14px;
+  height: 14px;
+  margin: 0 0.45em 0 0;
+  accent-color: var(--md-signal-deep);
+  vertical-align: -0.12em;
+}
+
+/* ---------- 引用 ---------- */
+.mx-root .markdown-content blockquote {
+  margin: 1.4em 0;
+  padding: 0.75em 1.1em;
+  border-left: 2px solid rgba(228, 87, 46, 0.52);
+  border-radius: 0 9px 9px 0;
+  background: linear-gradient(90deg, rgba(251, 232, 225, 0.62), rgba(251, 232, 225, 0));
+  color: var(--md-ink-3);
+}
+
+.mx-root .markdown-content blockquote > :last-child {
+  margin-bottom: 0;
+}
+
+.mx-root .markdown-content blockquote strong {
+  color: var(--md-signal-ink);
+}
+
+/* ---------- 代码 ---------- */
+.mx-root .markdown-content code,
+.mx-root .markdown-content kbd,
+.mx-root .markdown-content samp {
+  font-family: var(--md-mono);
+  font-size: 0.88em;
+}
+
+.mx-root .markdown-content :not(pre) > code {
+  padding: 0.15em 0.4em;
+  border: 1px solid var(--md-line);
+  border-radius: 5px;
+  background: var(--md-sunken);
+  color: var(--md-ink);
+  white-space: break-spaces;
+}
+
+.mx-root .markdown-content pre {
+  margin: 1.35em 0;
+  padding: 16px 18px;
+  overflow-x: auto;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  background: var(--ink, #17181b);
+  color: #ece7dc;
+  font-size: 12.5px;
+  line-height: 1.72;
+  tab-size: 2;
+  scrollbar-width: thin;
+}
+
+.mx-root .markdown-content pre code {
+  display: block;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: inherit;
+  white-space: pre;
+}
+
+.mx-root .markdown-content kbd {
+  display: inline-block;
+  padding: 0.05em 0.38em;
+  border: 1px solid var(--md-line-strong);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: var(--md-sunken);
+  color: var(--md-ink-2);
+  line-height: 1.45;
+}
+
+/* ---------- 表格 ---------- */
+.mx-root .md-table-scroll {
+  width: 100%;
+  max-width: 100%;
+  margin: 1.45em 0;
+  overflow-x: auto;
+  border: 1px solid var(--md-line);
+  border-radius: 11px;
+  background: var(--md-paper);
+  scrollbar-width: thin;
+}
+
+.mx-root .md-table-scroll::-webkit-scrollbar {
+  height: 7px;
+}
+
+.mx-root .markdown-content table {
+  width: 100%;
+  min-width: max-content;
+  border-collapse: collapse;
+  border-spacing: 0;
+  font-size: 13.5px;
+  line-height: 1.62;
+}
+
+.mx-root .markdown-content th,
+.mx-root .markdown-content td {
+  padding: 9px 13px;
+  border-right: 1px solid var(--md-line);
+  border-bottom: 1px solid var(--md-line);
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.mx-root .markdown-content th:last-child,
+.mx-root .markdown-content td:last-child {
+  border-right: none;
+}
+
+.mx-root .markdown-content tr:last-child > td,
+.mx-root .markdown-content tr:last-child > th {
+  border-bottom: none;
+}
+
+.mx-root .markdown-content thead th {
+  background: var(--md-sunken);
+  color: var(--md-ink);
+  font-size: 12.5px;
+  font-weight: 650;
+  letter-spacing: 0.015em;
+  white-space: nowrap;
+}
+
+.mx-root .markdown-content tbody tr:nth-child(even) td {
+  background: rgba(242, 238, 230, 0.34);
+}
+
+.mx-root .markdown-content tbody tr:hover td {
+  background: rgba(251, 232, 225, 0.38);
+}
+
+.mx-root .markdown-content caption {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--md-line);
+  color: var(--md-ink-3);
+  font-size: 12px;
+  caption-side: top;
+  text-align: left;
+}
+
+/* ---------- 图片与媒体 ---------- */
+.mx-root .markdown-content img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 1.35em auto;
+  border: 1px solid var(--md-line);
+  border-radius: 11px;
+  background: var(--md-sunken);
+  box-shadow: 0 8px 22px -18px rgba(35, 29, 19, 0.28);
+}
+
+.mx-root .markdown-content figure {
+  margin: 1.5em 0;
+}
+
+.mx-root .markdown-content figure img {
+  margin: 0 auto;
+}
+
+.mx-root .markdown-content figcaption {
+  margin-top: 0.55em;
+  color: var(--md-ink-3);
+  font-size: 11.5px;
+  line-height: 1.6;
+  text-align: center;
+}
+
+.mx-root .markdown-content video,
+.mx-root .markdown-content canvas {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 11px;
+}
+
+/* ---------- 细节 ---------- */
+.mx-root .markdown-content details {
+  margin: 1em 0;
+  padding: 0.6em 0.9em;
+  border: 1px solid var(--md-line);
+  border-radius: 9px;
+  background: var(--md-sunken);
+}
+
+.mx-root .markdown-content summary {
+  color: var(--md-ink);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.mx-root .markdown-content sup,
+.mx-root .markdown-content sub {
+  font-size: 0.72em;
+  line-height: 0;
+}
+
+.mx-root .markdown-content ::selection {
+  background: rgba(228, 87, 46, 0.22);
+  color: var(--md-signal-ink);
+}
+
+/* ---------- 编辑器预览的紧凑排版 ---------- */
+.mx-root .markdown-preview .markdown-content {
+  padding: 24px 24px 36px;
+  font-size: 14.5px;
+  line-height: 1.78;
+}
+
+.mx-root .markdown-preview .markdown-content h1 {
+  font-size: 28px;
+}
+
+.mx-root .markdown-preview .markdown-content h2 {
+  font-size: 23px;
+}
+
+/* ---------- CSS Custom Highlight API ----------
+   标签色彩由 useMarkdownAnnotation 动态注入；
+   这里只声明选中/关联态，避免与标签底色互相覆盖。 */
+.mx-root ::highlight(lf-selected) {
+  text-decoration-line: underline;
+  text-decoration-thickness: 2px;
+  text-decoration-color: var(--signal-deep, #c44722);
+  text-underline-offset: 2px;
+}
+
+.mx-root ::highlight(lf-linked) {
+  background-color: rgba(196, 71, 34, 0.12);
+}
+
+/* ---------- 窄屏 ---------- */
+@media (max-width: 720px) {
+  .mx-root .markdown-content {
+    padding: 22px 18px 36px;
+    font-size: 14.5px;
+    line-height: 1.8;
+  }
+
+  .mx-root .markdown-content h1 {
+    font-size: 27px;
+  }
+
+  .mx-root .markdown-content h2 {
+    font-size: 22px;
+  }
+
+  .mx-root .markdown-content th,
+  .mx-root .markdown-content td {
+    padding: 8px 10px;
+    font-size: 12.5px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mx-root .markdown-content a {
+    transition: none;
+  }
+}

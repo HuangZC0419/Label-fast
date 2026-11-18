@@ -50,7 +50,7 @@ async function handleSubmit(): Promise<void> {
         </div>
 
         <div class="login-brand-core">
-          <h1 class="login-brand-wordmark">LabelFast<span class="login-brand-period">.</span></h1>
+          <h1 class="login-brand-wordmark">数据标注与分类工具<span class="login-brand-period">.</span></h1>
           <p class="login-brand-tagline">Annotation, <em>edited</em>.</p>
 
           <div class="login-brand-sample">
@@ -83,7 +83,7 @@ async function handleSubmit(): Promise<void> {
               <path d="M10 12h4" />
             </svg>
           </span>
-          <span>LabelFast<span class="login-brand-period">.</span></span>
+          <span>数据标注与分类工具<span class="login-brand-period">.</span></span>
         </div>
 
         <div class="login-form-wrapper">
@@ -174,7 +174,7 @@ async function handleSubmit(): Promise<void> {
           <span class="login-foot-link">隐私政策</span>
           <span aria-hidden="true">·</span>
           <span class="login-foot-link">用户协议</span>
-          <span class="login-copyright">© 2026 LabelFast</span>
+          <span class="login-copyright">© 2026 数据标注与分类工具</span>
         </footer>
       </section>
     </div>

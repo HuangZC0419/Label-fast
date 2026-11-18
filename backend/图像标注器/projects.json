@@ -1,5 +1,15 @@
 [
   {
+    "id": "aee92019-f185-5707-bb90-d05ae74586eb",
+    "name": "示例项目",
+    "project_dir": "projects/示例项目",
+    "image_dir": "projects/示例项目/images",
+    "jsonl_path": "projects/示例项目/标注结果_qa.jsonl",
+    "box_jsonl_path": "projects/示例项目/标注结果_boxes.jsonl",
+    "labels": [],
+    "last_image": ""
+  },
+  {
     "id": "2a4e4b66-a3fd-4b26-b180-f6d7217c5ba6",
     "name": "121",
     "project_dir": "projects/121",
@@ -7,6 +17,19 @@
     "jsonl_path": "projects/121/标注结果_qa.jsonl",
     "box_jsonl_path": "projects/121/标注结果_boxes.jsonl",
     "labels": [],
-    "last_image": ""
+    "last_image": "1.png"
+  },
+  {
+    "id": "b9075275-9e80-4b5a-85f1-fc09e6b54e21",
+    "name": "233",
+    "project_dir": "projects/233",
+    "image_dir": "projects/233/images",
+    "jsonl_path": "projects/233/标注结果_qa.jsonl",
+    "box_jsonl_path": "projects/233/标注结果_boxes.jsonl",
+    "labels": [
+      "机械臂",
+      "人员"
+    ],
+    "last_image": "1.png"
   }
 ]

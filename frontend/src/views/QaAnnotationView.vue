@@ -21,6 +21,7 @@ const {
   userContent,
   assistantContent,
   fetchProjects,
+  ensureDefaultProject,
   fetchImages,
   createProject,
   switchProject,
@@ -151,6 +152,8 @@ onMounted(async () => {
   window.addEventListener('keydown', handleKeydown)
 
   await fetchProjects()
+  // 首次进入且未选中项目时，默认展示示例项目
+  await ensureDefaultProject()
   if (currentProjectId.value && images.value.length === 0 && !imagesError.value) {
     await fetchImages(currentProject.value.last_image || '')
   }

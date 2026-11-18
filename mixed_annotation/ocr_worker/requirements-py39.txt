@@ -1,0 +1,31 @@
+# 数据标注与分类工具 混合标注 — OCR Worker（Python 3.9 / CPU）
+#
+# 安装：
+#   conda create -n mixed_ocr python=3.9 -y
+#   conda activate mixed_ocr
+#   python -m pip install --upgrade pip
+#   python -m pip install -r requirements-py39.txt
+#
+# 如果 PaddlePaddle 下载慢，可先单独安装：
+#   python -m pip install paddlepaddle==3.3.1 -i https://www.paddlepaddle.org.cn/packages/stable/cpu/
+# 再执行上面的 requirements（已满足版本会被跳过）。
+
+# PaddleOCR 3.7 的 PP-StructureV3 需要 Python 3.9+；Python 3.8 不支持。
+paddlepaddle==3.3.1
+paddleocr[doc-parser]==3.7.0
+
+# PDF 逐页渲染 / 图片处理
+pymupdf==1.24.14
+pillow==10.4.0
+
+# PaddleOCR 3.x / PaddleX 在 NumPy 2.x 下存在兼容风险，固定 1.24.x
+numpy==1.24.4
+
+# Worker HTTP 服务
+fastapi==0.115.6
+pydantic==2.10.6
+uvicorn[standard]==0.30.6
+python-multipart==0.0.9
+
+# Python 3.9 下 Pydantic/FastAPI 评估 `X | None` 注解需要该 backport
+eval-type-backport>=0.2.0

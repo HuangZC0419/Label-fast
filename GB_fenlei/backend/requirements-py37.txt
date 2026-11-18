@@ -1,0 +1,12 @@
+# Python 3.7 / Win7 CF37 tested pins (2026-10-26)
+# Verified with Python 3.7.16 + vc=14.1 + vs2015_runtime=14.16.27012
+# and the full backend test suite (128 tests).
+fastapi==0.99.1
+pydantic==1.10.15
+starlette==0.27.0
+uvicorn==0.20.0
+python-multipart==0.0.6
+anyio==3.7.1
+openpyxl==3.1.2
+importlib-metadata==6.7.0
+zipp==3.15.0

@@ -1,5 +1,5 @@
 /* ============================================================
-   LabelFast Design System — Ink & Signal
+   数据标注与分类工具 Design System — Ink & Signal
    暖纸色画布 · 深墨外壳 · 单一朱砂橙强调
    字体全部离线自托管（Geist / Geist Mono / Instrument Serif）
    ============================================================ */
@@ -2527,9 +2527,10 @@ select.input {
   margin: 0;
   font-family: var(--font-display);
   font-weight: 400;
-  font-size: clamp(52px, 6vw, 82px);
-  line-height: .95;
-  letter-spacing: -.02em;
+  /* 中文品牌名较长，字号按可用列宽收敛，避免溢出左侧品牌面板 */
+  font-size: clamp(30px, 3.2vw, 44px);
+  line-height: 1.15;
+  letter-spacing: .01em;
   color: var(--paper);
 }
 

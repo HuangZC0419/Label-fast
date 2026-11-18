@@ -1,0 +1,24 @@
+0 verbose cli E:\node\node.exe E:\node\node_modules\npm\bin\npm-cli.js
+1 info using npm@10.9.2
+2 info using node@v22.15.0
+3 silly config load:file:E:\node\node_modules\npm\npmrc
+4 silly config load:file:H:\Git\1CF_win11\数据标注与分类工具\frontend\.npmrc
+5 silly config load:file:C:\Users\11597\.npmrc
+6 silly config load:file:H:\Git\1CF_win11\数据标注与分类工具\frontend\etc\npmrc
+7 verbose title npm run build
+8 verbose argv "--prefix" "H:\\Git\\1CF_win11\\数据标注与分类工具\\frontend" "run" "build"
+9 verbose logfile logs-max:10 dir:H:\Git\1CF_win11\数据标注与分类工具\mixed_annotation\backend\.npm-cache\_logs\2026-11-06T08_41_14_899Z-
+10 verbose logfile H:\Git\1CF_win11\数据标注与分类工具\mixed_annotation\backend\.npm-cache\_logs\2026-11-06T08_41_14_899Z-debug-0.log
+11 silly logfile done cleaning log files
+12 http fetch GET 200 https://registry.npmjs.org/npm 961ms
+13 verbose cwd H:\Git\1CF_win11\数据标注与分类工具\mixed_annotation\backend
+14 verbose os Windows_NT 10.0.26200
+15 verbose node v22.15.0
+16 verbose npm  v10.9.2
+17 notice
+17 notice New major version of npm available! 10.9.2 -> 12.2.2
+17 notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.2
+17 notice To update run: npm install -g npm@12.2.2
+17 notice  { force: true, [Symbol(proc-log.meta)]: true }
+18 verbose exit 0
+19 info ok

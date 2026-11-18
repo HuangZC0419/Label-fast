@@ -1,0 +1,11 @@
+# 大体积模型与解析数据不入库
+backend/models/
+backend/datasets/
+input/
+output/
+
+# 运行时缓存
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.model_cache/

@@ -19,6 +19,7 @@ const {
   currentImageName,
   boxesForCurrentImage,
   fetchProjects,
+  ensureDefaultProject,
   fetchImages,
   createProject,
   switchProject,
@@ -229,6 +230,8 @@ onMounted(async () => {
 
   // 页面之间切换时共享状态仍然存在，仅在项目已选中但图片尚未加载时补拉一次。
   await fetchProjects()
+  // 首次进入且未选中项目时，默认展示示例项目
+  await ensureDefaultProject()
   if (currentProjectId.value && images.value.length === 0 && !imagesError.value) {
     await fetchImages(currentProject.value.last_image || '')
   }

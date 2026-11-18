@@ -4,6 +4,9 @@ __pycache__/
 .venv/
 .pytest_cache/
 
+# GB backend generated output
+GB_fenlei/backend/输出/
+
 # Frontend
 node_modules/
 frontend/.npm-cache/
@@ -14,6 +17,21 @@ frontend/.npm-cache/
 # Environment
 .env
 
+# Mixed annotation runtime data / models
+mixed_annotation/models/
+mixed_annotation/backend/data/
+mixed_annotation/backend/data_backup_*/
+mixed_annotation/ocr_worker/data/
+mixed_annotation/ocr_worker/models/
+mixed_annotation/.ruff_cache/
+mixed_annotation/.npm-cache/
+
+# Model annotation runtime data / models
+model_annotation/backend/models/
+model_annotation/backend/datasets/
+model_annotation/backend/.model_cache/
+model_annotation/input/
+model_annotation/output/
+
 # IDE
-.superpowers/
 .trae/

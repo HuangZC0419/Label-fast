@@ -39,6 +39,11 @@ DEFAULT_IMAGE_DIR = ""
 DEFAULT_JSONL_PATH = ""
 DEFAULT_JSONL_FILENAME = "标注结果_qa.jsonl"
 
+# 默认示例项目：图片目录存在但未登记时自动补入项目列表，保证图像/问答标注有默认可选项目
+DEFAULT_EXAMPLE_PROJECT_NAME = "示例项目"
+DEFAULT_EXAMPLE_PROJECT_DIR = f"projects/{DEFAULT_EXAMPLE_PROJECT_NAME}"
+DEFAULT_EXAMPLE_PROJECT_ID = str(uuid.uuid5(uuid.NAMESPACE_URL, "data-annotation-tool/example-project"))
+
 def _resolve_path(path: str) -> str:
     """将相对路径转为绝对路径（相对于 PROJECT_ROOT）。已是绝对路径则直接返回。"""
     if os.path.isabs(path):
@@ -88,6 +93,22 @@ def _build_project_paths(project_name: str) -> dict:
         "jsonl_path": f"{project_dir}/{DEFAULT_JSONL_FILENAME}",
         "box_jsonl_path": f"{project_dir}/标注结果_boxes.jsonl",
     }
+
+def _build_default_example_project() -> Optional[Project]:
+    """构建默认示例项目；图片目录不存在时返回 None，避免凭空重建已删除的项目。"""
+    image_dir = f"{DEFAULT_EXAMPLE_PROJECT_DIR}/images"
+    if not os.path.isdir(_resolve_path(image_dir)):
+        return None
+    return Project(
+        id=DEFAULT_EXAMPLE_PROJECT_ID,
+        name=DEFAULT_EXAMPLE_PROJECT_NAME,
+        project_dir=DEFAULT_EXAMPLE_PROJECT_DIR,
+        image_dir=image_dir,
+        jsonl_path=f"{DEFAULT_EXAMPLE_PROJECT_DIR}/{DEFAULT_JSONL_FILENAME}",
+        box_jsonl_path=f"{DEFAULT_EXAMPLE_PROJECT_DIR}/标注结果_boxes.jsonl",
+        labels=[],
+        last_image="",
+    )
 
 def _infer_project_dir(raw_project: dict) -> str:
     project_dir = _normalize_rel_path(raw_project.get("project_dir", ""))
@@ -326,6 +347,16 @@ def load_projects() -> List[Project]:
             valid_projects.append(p)
         except OSError as e:
             print(f"跳过项目 '{p.name}'：无法创建项目目录 ({p.project_dir}): {e}")
+
+    # 示例项目目录存在但未登记时自动补入列表（幂等），并置于列表首位作为默认项目
+    if not any(p.name == DEFAULT_EXAMPLE_PROJECT_NAME for p in valid_projects):
+        example_project = _build_default_example_project()
+        if example_project is not None:
+            try:
+                _ensure_project_structure(example_project)
+                valid_projects.insert(0, example_project)
+            except OSError as e:
+                print(f"跳过示例项目：无法创建项目目录 ({example_project.project_dir}): {e}")
 
     normalized_json = json.dumps(
         [p.model_dump() for p in valid_projects],

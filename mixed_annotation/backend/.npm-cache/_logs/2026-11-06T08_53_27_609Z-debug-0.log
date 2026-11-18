@@ -1,0 +1,18 @@
+0 verbose cli E:\node\node.exe E:\node\node_modules\npm\bin\npm-cli.js
+1 info using npm@10.9.2
+2 info using node@v22.15.0
+3 silly config load:file:E:\node\node_modules\npm\npmrc
+4 silly config load:file:H:\Git\1CF_win11\数据标注与分类工具\frontend\.npmrc
+5 silly config load:file:C:\Users\11597\.npmrc
+6 silly config load:file:H:\Git\1CF_win11\数据标注与分类工具\frontend\etc\npmrc
+7 verbose title npm run build
+8 verbose argv "--prefix" "H:\\Git\\1CF_win11\\数据标注与分类工具\\frontend" "run" "build"
+9 verbose logfile logs-max:10 dir:H:\Git\1CF_win11\数据标注与分类工具\mixed_annotation\backend\.npm-cache\_logs\2026-11-06T08_53_27_609Z-
+10 verbose logfile H:\Git\1CF_win11\数据标注与分类工具\mixed_annotation\backend\.npm-cache\_logs\2026-11-06T08_53_27_609Z-debug-0.log
+11 silly logfile done cleaning log files
+12 verbose cwd H:\Git\1CF_win11\数据标注与分类工具\mixed_annotation\backend
+13 verbose os Windows_NT 10.0.26200
+14 verbose node v22.15.0
+15 verbose npm  v10.9.2
+16 verbose exit 0
+17 info ok

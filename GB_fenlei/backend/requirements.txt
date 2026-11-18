@@ -1,0 +1,16 @@
+# Python 3.7 (Win7 CF37): tested pins, see requirements-py37.txt
+fastapi==0.99.1; python_version < "3.8"
+pydantic==1.10.15; python_version < "3.8"
+starlette==0.27.0; python_version < "3.8"
+uvicorn==0.20.0; python_version < "3.8"
+python-multipart==0.0.6; python_version < "3.8"
+anyio==3.7.1; python_version < "3.8"
+openpyxl==3.1.2; python_version < "3.8"
+
+# Python 3.8+ (Win7 can only use 3.8.10; Win10/11 may use newer 3.9+)
+fastapi>=0.110,<0.116; python_version >= "3.8"
+uvicorn>=0.29,<0.34; python_version >= "3.8" and python_version < "3.9"
+uvicorn>=0.29,<0.35; python_version >= "3.9"
+python-multipart>=0.0.9,<0.0.21; python_version >= "3.8" and python_version < "3.9"
+python-multipart>=0.0.9; python_version >= "3.9"
+openpyxl>=3.1,<4; python_version >= "3.8"

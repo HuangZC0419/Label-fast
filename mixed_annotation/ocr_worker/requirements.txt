@@ -1,0 +1,11 @@
+# OCR Worker 依赖（唯一运行环境：conda 环境 CFwin11 / Python 3.12）
+# PaddleOCR PP-StructureV3 CPU 回退 + PyMuPDF 渲染 + httpx 调用 MinerU API
+fastapi>=0.115
+uvicorn[standard]>=0.30
+python-multipart>=0.0.9
+paddlepaddle==3.3.1
+paddleocr[doc-parser]==3.7.0
+pymupdf>=1.24,<2
+pillow>=10
+# 常驻 mineru-api 客户端（延迟导入；缺失时自动回退子进程）
+httpx>=0.27

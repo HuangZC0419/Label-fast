@@ -1,0 +1,16 @@
+# 数据标注与分类工具 混合标注 — 主应用后端（Python 3.9）
+#
+# 安装：
+#   conda create -n mixed_app python=3.9 -y
+#   conda activate mixed_app
+#   python -m pip install --upgrade pip
+#   python -m pip install -r requirements-py39.txt
+
+fastapi==0.115.6
+pydantic==2.10.6
+uvicorn[standard]==0.30.6
+python-multipart==0.0.9
+httpx==0.27.2
+
+# Python 3.9 下评估 `X | None` 注解所需的 Pydantic/FastAPI 兼容 backport
+eval-type-backport>=0.2.0
