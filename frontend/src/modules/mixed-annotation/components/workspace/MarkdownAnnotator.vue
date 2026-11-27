@@ -14,6 +14,11 @@ import {
 } from '../../utils/markdown'
 import { renderBlocks, type RenderedBlock } from '../../utils/blocks'
 import {
+  buildPageAnchors,
+  type ScrollAnchor,
+  type ScrollInfo,
+} from '../../utils/scrollSync'
+import {
   effectiveShortcuts,
   formatShortcutCompact,
 } from '../../utils/shortcuts'
@@ -536,6 +541,8 @@ function scheduleMeasure(): void {
 }
 
 function measureLayout(): void {
+  // 排版变化（字体、图片、窗口尺寸、块内容）都会让页首偏移失效。
+  scrollAnchorsCache = null
   const stage = stageRef.value
   const map = annotation.textMap.value
   if (!stage || !map) {
@@ -1045,6 +1052,99 @@ function setScrollRatio(ratio: number): void {
   element.scrollTop = target
 }
 
+/** 页首锚点缓存：布局/内容变化时失效，滚动时只做纯计算。 */
+let scrollAnchorsCache: {
+  pageCount: number
+  scrollHeight: number
+  anchors: ScrollAnchor[]
+} | null = null
+
+function getScrollInfo(pageCount?: number): ScrollInfo | null {
+  const element = scrollRef.value
+  const body = bodyRef.value
+  if (!element || !body) return null
+
+  const blocks = renderedBlocks.value
+  const maxBlockPage = blocks.reduce(
+    (max, item) =>
+      Math.max(max, Number(item.block.pageEnd) || Number(item.block.page) || 1),
+    0,
+  )
+  const total = pageCount && pageCount > 0 ? pageCount : maxBlockPage
+  if (!total) return null
+
+  const cached =
+    scrollAnchorsCache &&
+    scrollAnchorsCache.pageCount === total &&
+    scrollAnchorsCache.scrollHeight === element.scrollHeight
+      ? scrollAnchorsCache
+      : null
+
+  if (cached) {
+    return {
+      scrollTop: element.scrollTop,
+      scrollHeight: element.scrollHeight,
+      viewportHeight: element.clientHeight,
+      pageCount: total,
+      anchors: cached.anchors,
+    }
+  }
+
+  const elementByBlock = new Map<string, HTMLElement>()
+  body.querySelectorAll<HTMLElement>('[data-block-id]').forEach((node) => {
+    const id = node.dataset.blockId
+    if (id) elementByBlock.set(id, node)
+  })
+
+  const scrollRect = element.getBoundingClientRect()
+  const pageTops = new Map<number, number>()
+
+  for (const item of blocks) {
+    const block = item.block
+    const node = elementByBlock.get(block.id)
+    if (!node) continue
+    const rect = node.getBoundingClientRect()
+    const top = rect.top - scrollRect.top + element.scrollTop
+    const startPage = Math.max(1, Number(block.page) || 1)
+    const endPage = Math.max(startPage, Number(block.pageEnd) || startPage)
+    // 一个段落跨多页时，按页均分它的高度，避免多页共用同一个锚点。
+    const span = Math.max(1, endPage - startPage + 1)
+    for (let page = startPage; page <= Math.min(endPage, total); page += 1) {
+      const pageTop = top + ((page - startPage) / span) * rect.height
+      const existing = pageTops.get(page)
+      if (existing === undefined || pageTop < existing) pageTops.set(page, pageTop)
+    }
+  }
+
+  const anchors = buildPageAnchors(pageTops, total, element.scrollHeight)
+  if (anchors.length < 2) return null
+
+  scrollAnchorsCache = {
+    pageCount: total,
+    scrollHeight: element.scrollHeight,
+    anchors,
+  }
+
+  return {
+    scrollTop: element.scrollTop,
+    scrollHeight: element.scrollHeight,
+    viewportHeight: element.clientHeight,
+    pageCount: total,
+    anchors,
+  }
+}
+
+/** 外部（MixedWorkspace）按绝对滚动偏移对齐，供按页同步使用。 */
+function scrollToPosition(top: number): void {
+  const element = scrollRef.value
+  if (!element) return
+  const max = element.scrollHeight - element.clientHeight
+  const target = Math.min(max, Math.max(0, top))
+  if (Math.abs(target - element.scrollTop) < 1) return
+  suppressOwnScroll()
+  element.scrollTop = target
+}
+
 function getScrollRatio(): number {
   const element = scrollRef.value
   return element ? scrollRatioOf(element) : 0
@@ -1056,6 +1156,8 @@ defineExpose({
   hasAnnotations: () => annotation.hasAnnotations.value,
   clearAnnotations: annotation.clearAnnotations,
   refreshLayout,
+  getScrollInfo,
+  scrollToPosition,
   setScrollRatio,
   getScrollRatio,
 })

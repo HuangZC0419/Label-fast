@@ -22,6 +22,7 @@ import {
 } from '../../api/client'
 import { normalizeBlocks } from '../../utils/blocks'
 import { looksLikeGarbledMarkdown } from '../../utils/textQuality'
+import { mapScrollTop, type ScrollInfo } from '../../utils/scrollSync'
 import FigureDialog from './FigureDialog.vue'
 import MarkdownAnnotator from './MarkdownAnnotator.vue'
 import MarkdownEditor from './MarkdownEditor.vue'
@@ -45,6 +46,9 @@ interface AnnotatorApi {
   hasAnnotations: () => boolean
   clearAnnotations: () => void
   refreshLayout: () => Promise<void>
+  /** 按页对齐所需的滚动信息（页首锚点 + 当前偏移）。 */
+  getScrollInfo: (pageCount?: number) => ScrollInfo | null
+  scrollToPosition: (top: number) => void
   /** 按 0..1 比例设置滚动位置（同步滚动用）。 */
   setScrollRatio: (ratio: number) => void
   getScrollRatio: () => number
@@ -58,6 +62,8 @@ interface PdfPreviewApi {
   startCapture: () => void
   /** 进入/退出图片、表格标注模式，供 F3 快捷键调用。 */
   toggleCaptureMode: () => void
+  getScrollInfo: () => ScrollInfo | null
+  scrollToPosition: (top: number) => void
   setScrollRatio: (ratio: number) => void
   getScrollRatio: () => number
 }
@@ -583,11 +589,49 @@ function clearSyncAlignTimer(): void {
   syncAlignTimer = null
 }
 
-/** 用 Markdown 当前比例对齐 PDF；高度未就绪时由组件内部安全跳过。 */
+/**
+ * 把源侧的滚动位置映射到目标侧。
+ * 优先按页锚点映射（页码对齐，跨页累计误差会被校正）；
+ * 编辑模式、图片较少或锚点尚未就绪时回退到整体比例。
+ */
+function syncByPageAnchors(
+  source: ScrollInfo | null,
+  target: ScrollInfo | null,
+  apply: (top: number) => void,
+): boolean {
+  if (!source || !target) return false
+  const mapped = mapScrollTop(source, target)
+  if (mapped === null) return false
+  apply(mapped)
+  return true
+}
+
+function markdownScrollInfo(pageCount?: number): ScrollInfo | null {
+  return mode.value === 'edit'
+    ? null
+    : annotatorRef.value?.getScrollInfo(pageCount) ?? null
+}
+
+/** 用 Markdown 当前位置对齐 PDF；PDF 页面尺寸未就绪时安全跳过。 */
 async function alignPdfToMarkdown(): Promise<void> {
   if (!scrollSyncActive.value) return
   await nextTick()
   if (!scrollSyncActive.value) return
+
+  if (mode.value === 'annotate') {
+    const pdfInfo = pdfPreviewRef.value?.getScrollInfo() ?? null
+    const markdownInfo = markdownScrollInfo(pdfInfo?.pageCount)
+    if (
+      syncByPageAnchors(markdownInfo, pdfInfo, (top) =>
+        pdfPreviewRef.value?.scrollToPosition(top),
+      )
+    ) {
+      lastMarkdownRatio.value =
+        annotatorRef.value?.getScrollRatio() ?? lastMarkdownRatio.value
+      return
+    }
+  }
+
   const ratio =
     mode.value === 'edit'
       ? editorRef.value?.getScrollRatio() ?? lastMarkdownRatio.value
@@ -614,13 +658,40 @@ function handleMarkdownScroll(ratio: number): void {
   // 无论是否联动都记录比例：用户关闭同步后滚动 Markdown，再开启时仍能对齐。
   lastMarkdownRatio.value = ratio
   if (!scrollSyncActive.value) return
+
+  if (mode.value === 'annotate') {
+    const pdfInfo = pdfPreviewRef.value?.getScrollInfo() ?? null
+    const markdownInfo = markdownScrollInfo(pdfInfo?.pageCount)
+    if (
+      syncByPageAnchors(markdownInfo, pdfInfo, (top) =>
+        pdfPreviewRef.value?.scrollToPosition(top),
+      )
+    ) {
+      return
+    }
+  }
+
   pdfPreviewRef.value?.setScrollRatio(ratio)
 }
 
 function handlePdfScroll(ratio: number): void {
   if (!scrollSyncActive.value) return
-  if (mode.value === 'edit') editorRef.value?.setScrollRatio(ratio)
-  else annotatorRef.value?.setScrollRatio(ratio)
+
+  if (mode.value === 'annotate') {
+    const pdfInfo = pdfPreviewRef.value?.getScrollInfo() ?? null
+    const markdownInfo = markdownScrollInfo(pdfInfo?.pageCount)
+    if (
+      syncByPageAnchors(pdfInfo, markdownInfo, (top) =>
+        annotatorRef.value?.scrollToPosition(top),
+      )
+    ) {
+      return
+    }
+    annotatorRef.value?.setScrollRatio(ratio)
+    return
+  }
+
+  editorRef.value?.setScrollRatio(ratio)
 }
 
 watch(
@@ -1489,11 +1560,11 @@ defineExpose({
               :class="{ 'is-toggle-active': syncScroll && file.source_type === 'pdf' }"
               :aria-pressed="syncScroll && file.source_type === 'pdf'"
               :disabled="!completed || !documentReady || file.source_type !== 'pdf'"
-              title="Markdown 与 PDF 同步上下滚动（仅 PDF）"
+              title="Markdown 与 PDF 按页码对齐滚动：以每页页首为锚点，跨页时校正累计偏差（仅 PDF）"
               @click="toggleSyncScroll"
             >
               <span class="mw-control-dot" aria-hidden="true" />
-              同步滚动
+              按页对齐
             </button>
           </div>
         </div>

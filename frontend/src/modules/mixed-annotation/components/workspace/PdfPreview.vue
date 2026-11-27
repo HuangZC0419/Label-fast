@@ -13,6 +13,7 @@ import type {
   MixedFile,
 } from '../../types'
 import { apiUrl } from '../../api/client'
+import { buildPageAnchors, type ScrollInfo } from '../../utils/scrollSync'
 
 /**
  * 原始 PDF / 图片预览。
@@ -722,6 +723,44 @@ function getScrollRatio(): number {
   return scrollRatioOf(root)
 }
 
+/** 每一页页首在滚动内容中的偏移，供 Markdown 按页对齐。 */
+function getScrollInfo(): ScrollInfo | null {
+  const root = scrollRef.value
+  if (!root || !isPdf.value || pages.value.length === 0) return null
+
+  const rootRect = root.getBoundingClientRect()
+  const pageTops = new Map<number, number>()
+  for (const entry of pages.value) {
+    const element = pageElements.get(entry.page)
+    if (!element) continue
+    const rect = element.getBoundingClientRect()
+    pageTops.set(entry.page, rect.top - rootRect.top + root.scrollTop)
+  }
+
+  const anchors = buildPageAnchors(pageTops, pages.value.length, root.scrollHeight)
+  if (anchors.length < 2) return null
+
+  return {
+    scrollTop: root.scrollTop,
+    scrollHeight: root.scrollHeight,
+    viewportHeight: root.clientHeight,
+    pageCount: pages.value.length,
+    anchors,
+  }
+}
+
+/** 外部按绝对滚动偏移对齐（按页同步用）。 */
+function scrollToPosition(top: number): void {
+  const root = scrollRef.value
+  if (!root || !isPdf.value) return
+  const max = root.scrollHeight - root.clientHeight
+  const target = Math.min(max, Math.max(0, top))
+  if (Math.abs(target - root.scrollTop) < 1) return
+  suppressOwnScroll()
+  root.scrollTop = target
+  updateActivePage()
+}
+
 function updateActivePage(): void {
   const root = scrollRef.value
   if (!root || !pages.value.length) return
@@ -1245,6 +1284,8 @@ defineExpose({
   captureRegion,
   startCapture,
   toggleCaptureMode,
+  getScrollInfo,
+  scrollToPosition,
   setScrollRatio,
   getScrollRatio,
 })
