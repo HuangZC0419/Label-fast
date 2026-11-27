@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import type { AnnotationRecord, BlockInfo } from '../../types'
+import type { AnnotationRecord, AnnotationSpan, BlockInfo } from '../../types'
 import {
   hexToRgba,
   labelColor,
@@ -13,6 +13,10 @@ import {
   renderMarkdown,
 } from '../../utils/markdown'
 import { renderBlocks, type RenderedBlock } from '../../utils/blocks'
+import {
+  effectiveShortcuts,
+  formatShortcutCompact,
+} from '../../utils/shortcuts'
 import '../../styles/markdown.css'
 
 /**
@@ -46,6 +50,38 @@ interface FallbackRect {
   linked: boolean
 }
 
+/** 实体标签名叠加层的显示范围：全部 / 仅当前关注 / 隐藏。 */
+type SpanLabelMode = 'all' | 'focus' | 'off'
+
+/**
+ * 一枚标签名胶囊的布局结果。
+ * 坐标与 relationVisuals / fallbackRects 一致，都是相对 .md-stage 的左上角。
+ */
+interface SpanLabelVisual {
+  key: string
+  spanId: number
+  label: string
+  /** 悬停说明：同一范围存在多个标签时列出全部标签。 */
+  title: string
+  color: string
+  left: number
+  top: number
+  maxWidth: number
+  /** true 表示胶囊右边缘对齐锚点（靠近正文右边界时向左生长） */
+  alignEnd: boolean
+  selected: boolean
+  linked: boolean
+  missing: boolean
+}
+
+/** 标签名胶囊占用矩形，用于后续候选位置避让。 */
+interface SpanLabelBox {
+  left: number
+  right: number
+  top: number
+  bottom: number
+}
+
 const props = withDefaults(
   defineProps<{
     fileId: string
@@ -55,6 +91,8 @@ const props = withDefaults(
     /** 后端权威切块；为空时回退为整篇 Markdown 渲染。 */
     blocks?: BlockInfo[]
     annotations?: AnnotationRecord | null
+    /** 项目级自定义快捷键覆盖项；缺省表示全部沿用默认 1–9。 */
+    shortcuts?: Record<string, string>
     loading?: boolean
     /** 编辑模式下画布仍挂载但隐藏，此时屏蔽标注快捷键。 */
     active?: boolean
@@ -62,6 +100,7 @@ const props = withDefaults(
   {
     blocks: () => [],
     annotations: null,
+    shortcuts: () => ({}),
     loading: false,
     active: true,
   },
@@ -72,11 +111,14 @@ const emit = defineEmits<{
   'scroll-state': [ratio: number]
   /** 标注数据发生用户侧变化，父组件据此触发自动保存。 */
   change: []
+  /** 请求打开项目级快捷键设置弹窗（由父级透传到视图层）。 */
+  'edit-shortcuts': []
 }>()
 
 const annotation = useMarkdownAnnotation({
   labels: () => props.labels,
   relationTypes: () => props.relationTypes,
+  shortcuts: () => props.shortcuts,
   isActive: () => props.active,
 })
 
@@ -100,6 +142,7 @@ const {
   applyLabel,
   applyRelation,
   selectSpanAtPoint,
+  selectSpanById,
   selectRelation,
   setLinkedSpans,
   cancelPendingSelection,
@@ -121,6 +164,44 @@ const relationVisuals = ref<RelationVisual[]>([])
 const fallbackRects = ref<FallbackRect[]>([])
 const overlayWidth = ref(1)
 const overlayHeight = ref(1)
+
+/* ============================================================
+   实体标签名叠加层
+   ============================================================ */
+
+/*
+ * 为什么需要这一层：正文高亮只有底色（CSS Custom Highlight API 不能注入文字），
+ * 项目里有 40–50 个实体标签而调色板只有 6 色，颜色重复后用户无法回头辨认。
+ * 因此在每处高亮的首行上方叠加一枚「标签名胶囊」，颜色仍沿用字典 chip 的底色。
+ */
+const SPAN_LABEL_MODE_STORAGE_KEY = 'labelfast.spanLabelMode'
+
+const spanLabelModes: { value: SpanLabelMode; label: string; title: string }[] = [
+  { value: 'all', label: '全部', title: '每个实体上方都显示标签名' },
+  { value: 'focus', label: '仅选中', title: '只显示当前选中/关联实体的标签名' },
+  { value: 'off', label: '隐藏', title: '不显示标签名，仅保留底色' },
+]
+
+const spanLabelMode = ref<SpanLabelMode>('all')
+const spanLabelVisuals = ref<SpanLabelVisual[]>([])
+
+function isSpanLabelMode(value: unknown): value is SpanLabelMode {
+  return spanLabelModes.some((option) => option.value === value)
+}
+
+function setSpanLabelMode(mode: SpanLabelMode): void {
+  spanLabelMode.value = mode
+}
+
+function restoreSpanLabelMode(): void {
+  try {
+    const stored = window.localStorage.getItem(SPAN_LABEL_MODE_STORAGE_KEY)
+    // 白名单校验：历史版本或手工改动留下的脏值一律回落到默认「全部」。
+    if (isSpanLabelMode(stored)) spanLabelMode.value = stored
+  } catch {
+    // 隐私模式 / 存储被禁用时读不到，保持默认值即可。
+  }
+}
 
 let renderToken = 0
 /** 文档加载期间抑制标注变更事件，避免把“载入”误判成“用户编辑”。 */
@@ -145,6 +226,37 @@ const selectedSpan = computed(() =>
 const selectedSpanText = computed(() =>
   selectedSpanId.value === null ? '' : truncate(getSpanText(selectedSpanId.value), 24),
 )
+/** 选中实体的标签名：状态栏必须能直接看到，否则标签丢失时无从判断原因。 */
+const selectedSpanLabel = computed(() => selectedSpan.value?.label ?? '')
+/**
+ * 选中实体的标签是否已不在项目字典中。
+ * 这类标签在画布上只能显示为字典外灰色，必须额外用文字与警示色说明。
+ */
+const selectedSpanLabelMissing = computed(
+  () =>
+    selectedSpan.value !== null &&
+    selectedSpanLabel.value !== '' &&
+    !props.labels.includes(selectedSpanLabel.value),
+)
+/** 缺失标签提示只在“实体选中”这一分支生效，待标注/待选关系时不应抢注意力。 */
+const showMissingLabelWarning = computed(
+  () =>
+    !pendingSelection.value &&
+    !pendingRelation.value &&
+    selectedSpanLabelMissing.value,
+)
+/**
+ * 当前文档中引用了字典外标签的实体数量。
+ * 只做只读统计，不改变标注数据结构，也不依赖后端新增字段。
+ */
+const missingSpanCount = computed(() => {
+  const known = new Set(props.labels)
+  let count = 0
+  for (const span of spans.value) {
+    if (!known.has(span.label)) count += 1
+  }
+  return count
+})
 const pendingRelationText = computed(() => {
   const pair = pendingRelation.value
   if (!pair) return ''
@@ -161,6 +273,78 @@ const relationMarkers = computed(() =>
     id: `lf-arrow-${visual.index}`,
     color: visual.color,
   })),
+)
+
+/**
+ * 「仅选中」模式下没有选中实体、也没有关系关联时，画布上一枚标签名都不会出现。
+ * 用一条弱提示解释这次「静默」，避免用户误以为标签名功能失效而退回看颜色。
+ */
+const spanLabelFocusHint = computed(
+  () =>
+    spanLabelMode.value === 'focus' &&
+    selectedSpanId.value === null &&
+    linkedSpanIds.value.length === 0,
+)
+
+/**
+ * 标签的有效快捷键：`{标签: 组合键}`。
+ * 前 9 个标签默认 1–9，项目覆盖项优先；第 10 个之后未自定义则没有徽标。
+ */
+const labelShortcuts = computed(() =>
+  effectiveShortcuts(props.labels, props.shortcuts),
+)
+
+function shortcutBadge(label: string): string {
+  return formatShortcutCompact(labelShortcuts.value[label] ?? '')
+}
+
+/* ============================================================
+   字典栏：单行横向滚动 + 展开全部
+   ============================================================ */
+
+/** 超过该数量时提供「展开全部 / 收起」切换，避免折叠态把标签藏住。 */
+const CHIP_EXPAND_THRESHOLD = 9
+
+/**
+ * 实体标签 / 关系类型的展开态，默认 false。
+ *
+ * 默认单行横向滚动：标签多时（截图项目 24 / 35 个）不会把顶栏撑成多行，
+ * 从而把 Markdown 正文区压扁；需要总览时用户可主动展开换行。
+ * 只影响布局，不改变标签点击、快捷键与选中态。
+ */
+const labelsExpanded = ref(false)
+const relationsExpanded = ref(false)
+
+const labelsOverflow = computed(() => props.labels.length > CHIP_EXPAND_THRESHOLD)
+const relationsOverflow = computed(
+  () => props.relationTypes.length > CHIP_EXPAND_THRESHOLD,
+)
+
+function toggleLabelsExpanded(): void {
+  if (!labelsOverflow.value) return
+  labelsExpanded.value = !labelsExpanded.value
+}
+
+function toggleRelationsExpanded(): void {
+  if (!relationsOverflow.value) return
+  relationsExpanded.value = !relationsExpanded.value
+}
+
+/*
+ * 数量回落到阈值以内时收起展开态。
+ * 否则「展开全部」按钮会随数量消失，而列表仍停在换行态，用户无法再收回去。
+ */
+watch(
+  () => props.labels.length,
+  (count) => {
+    if (count <= CHIP_EXPAND_THRESHOLD) labelsExpanded.value = false
+  },
+)
+watch(
+  () => props.relationTypes.length,
+  (count) => {
+    if (count <= CHIP_EXPAND_THRESHOLD) relationsExpanded.value = false
+  },
 )
 
 /* ============================================================
@@ -258,6 +442,20 @@ function handleCanvasClick(event: MouseEvent): void {
    快捷操作
    ============================================================ */
 
+/**
+ * 点击标签名胶囊 → 选中该处实体。
+ *
+ * 胶囊位于正文行间，如果继续让事件穿透，点到的是上一行文字甚至空白，
+ * 会选中相邻实体、让用户以为「点一下标签就变了」。这里直接用胶囊对应的
+ * spanId 选中，保证点哪枚胶囊就选中哪处标注（同一范围有多个标签时选最新一条）。
+ */
+function handleSpanChipClick(spanId: number): void {
+  localNotice.value = ''
+  hoveredRelation.value = null
+  setLinkedSpans([])
+  selectSpanById(spanId)
+}
+
 function handleLabelClick(label: string): void {
   if (!pendingSelection.value) {
     showNotice('请先在正文中选中文本，再应用实体标签')
@@ -321,9 +519,14 @@ function relationChipStyle(type: string): Record<string, string> {
 }
 
 /* ============================================================
-   关系曲线与兼容高亮测量
+   关系曲线、标签名胶囊与兼容高亮测量
    ============================================================ */
 
+/*
+ * 叠加层（关系曲线 / 标签名胶囊）的坐标全部相对 .md-stage，滚动不改变它们；
+ * 因此不为 scroll 注册测量监听：窗口尺寸、容器尺寸、图片加载、字体就绪
+ * 以及数据变更才是真正需要重测的时机，全都已有独立触发路径。
+ */
 function scheduleMeasure(): void {
   if (measureFrame) return
   measureFrame = requestAnimationFrame(() => {
@@ -338,6 +541,7 @@ function measureLayout(): void {
   if (!stage || !map) {
     relationVisuals.value = []
     fallbackRects.value = []
+    spanLabelVisuals.value = []
     return
   }
 
@@ -346,6 +550,7 @@ function measureLayout(): void {
     // 组件被 v-show 隐藏时无法测量；重新显示后由父组件调用 refreshLayout。
     relationVisuals.value = []
     fallbackRects.value = []
+    spanLabelVisuals.value = []
     return
   }
 
@@ -356,6 +561,8 @@ function measureLayout(): void {
   fallbackRects.value = highlightSupported.value
     ? []
     : buildFallbackRects(map, stageRect)
+  spanLabelVisuals.value =
+    spanLabelMode.value === 'off' ? [] : buildSpanLabelVisuals(map, stageRect)
 }
 
 function buildRelationVisuals(
@@ -450,6 +657,228 @@ function validClientRects(range: Range): DOMRect[] {
   )
 }
 
+/*
+ * 胶囊高度 14px：正文行高 28.8px，相邻两行字形之间只有约 11px 空白。
+ * 高度再大就会明显盖住上一行正文，再小则 10.5px 中文难以辨认。
+ */
+const SPAN_LABEL_CHIP_HEIGHT = 14
+/** 相邻胶囊之间的最小留白，避免不同实体的标签名贴在一起难以分辨。 */
+const SPAN_LABEL_GAP = 3
+/** 胶囊最大宽度：过宽会横跨正文，过窄则中文标签被 ellipsis 吃掉。 */
+const SPAN_LABEL_MAX_WIDTH = 200
+
+/**
+ * 估算胶囊宽度：碰撞检测用保守上界即可，宁可多留白也不要误判可放置。
+ * 中文字形在 10.5px 字号下约 10.5px 宽，拉丁字符约 6.3px；
+ * 早期按统一 7.2px 估算会让「普通螺纹公差带」这类标签被无谓截断。
+ */
+function estimateSpanLabelWidth(label: string): number {
+  let width = 10
+  for (const char of label) {
+    width += /[\u2e80-\u9fff\uff00-\uffef\u3000-\u303f]/.test(char) ? 10.5 : 6.3
+  }
+  // CSS 里还有 letter-spacing: 0.01em（10.5px 字号约 0.1px/字符），漏算会让长标签被无谓截断。
+  width += label.length * 0.1
+  return Math.min(SPAN_LABEL_MAX_WIDTH, Math.max(22, width))
+}
+
+function buildSpanLabelVisuals(
+  map: NonNullable<typeof annotation.textMap.value>,
+  stageRect: DOMRect,
+): SpanLabelVisual[] {
+  const stageWidth = stageRect.width
+  const stageHeight = stageRect.height
+  const linkedIds = new Set(linkedSpanIds.value)
+  // linkedSpanIds 已覆盖关系悬停/选中的两端；再并一次是防御性兜底，与兼容高亮层保持一致。
+  const currentRelation = selectedRelation.value
+  if (currentRelation) {
+    linkedIds.add(currentRelation.fromId)
+    linkedIds.add(currentRelation.toId)
+  }
+
+  /*
+   * 同一段文本可能被标注过多次：历史数据里既有完全重复的记录（同范围 + 同标签），
+   * 也有多人给同一段文本打了不同标签。一个文本范围只画一枚胶囊，
+   * 文字显示「最新标签 +N」，title 里列出全部标签；点击选中最新那条。
+   * 这样不会再出现同一段文字上叠出两三枚名字的观感，也不会隐瞒冲突。
+   */
+  const groupsByRange = new Map<string, AnnotationSpan[]>()
+  for (const span of spans.value) {
+    const key = `${span.start}:${span.end}`
+    const list = groupsByRange.get(key) ?? []
+    list.push(span)
+    groupsByRange.set(key, list)
+  }
+
+  const groups = Array.from(groupsByRange, ([key, list]) => {
+    list.sort((left, right) => left.id - right.id)
+    return { key, list, start: list[0].start, end: list[0].end }
+  }).sort((left, right) => left.start - right.start || left.end - right.end)
+
+  const occupied: SpanLabelBox[] = []
+  const visuals: SpanLabelVisual[] = []
+
+  for (const group of groups) {
+    const isSelected = group.list.some((span) => span.id === selectedSpanId.value)
+    const isLinked = group.list.some((span) => linkedIds.has(span.id))
+    // 聚焦模式只保留当前选中与关系关联的实体，其余靠底色表达。
+    if (spanLabelMode.value === 'focus' && !isSelected && !isLinked) continue
+
+    const range = createRangeFromOffsets(map, group.start, group.end)
+    if (!range) continue
+    const rects = validClientRects(range)
+    if (rects.length === 0) continue
+
+    // 最新记录（id 最大）代表这段文本当前的标签，也作为点击选中的目标。
+    const latest = group.list[group.list.length - 1]
+    const uniqueLabels = Array.from(new Set(group.list.map((span) => span.label)))
+    const extraLabelCount = uniqueLabels.length - 1
+    const displayLabel =
+      extraLabelCount > 0 ? `${latest.label} +${extraLabelCount}` : latest.label
+    const title =
+      extraLabelCount > 0
+        ? `该处标注了 ${uniqueLabels.length} 个标签：${uniqueLabels.join('、')}（点击选中最新标签「${latest.label}」）`
+        : latest.label
+
+    // 多行实体只在首行上方出一枚胶囊，否则会出现一长串重复标签名。
+    const first = rects[0]
+    // 舞台过窄时先压窄胶囊上限，避免兜底位置越过右边界被卡片裁掉。
+    const maxWidth = Math.min(
+      estimateSpanLabelWidth(displayLabel),
+      Math.max(22, stageWidth - 4),
+    )
+    let top = Math.max(0, first.top - stageRect.top - SPAN_LABEL_CHIP_HEIGHT - 1)
+    const anchorLeft = first.left - stageRect.left
+
+    // 候选位置：行首左侧 → 同一行起点向右紧邻 → 右对齐向左生长。
+    const inlineLeft = findSpanLabelInlineLeft(
+      anchorLeft,
+      top,
+      maxWidth,
+      occupied,
+      stageWidth,
+    )
+    const candidates: { left: number; alignEnd: boolean }[] = [
+      { left: anchorLeft, alignEnd: false },
+      ...(inlineLeft !== null && inlineLeft > anchorLeft
+        ? [{ left: inlineLeft, alignEnd: false }]
+        : []),
+      { left: anchorLeft, alignEnd: true },
+    ]
+
+    let chosen: { left: number; alignEnd: boolean } | null = null
+    for (const candidate of candidates) {
+      if (isSpanLabelPlaceable(candidate, top, maxWidth, stageWidth, stageHeight, occupied)) {
+        chosen = candidate
+        break
+      }
+    }
+    if (!chosen) {
+      /*
+       * 兜底：密集/嵌套实体（中文 NER 里「普通螺纹公差带」与「螺纹」常常同起点）
+       * 可能找不到完全不冲突的位置。此时宁可轻微压住文字，也不隐藏标签名。
+       * 但同一位置的嵌套实体若直接复用 (left, top)，后渲染的会把先渲染的整枚盖住，
+       * 因此先向上错开一层，保证两枚至少各露出大半。
+       */
+      const maxLeft = Math.max(2, stageWidth - maxWidth - 2)
+      chosen = { left: Math.min(Math.max(2, anchorLeft), maxLeft), alignEnd: false }
+      if (
+        !isSpanLabelPlaceable(chosen, top, maxWidth, stageWidth, stageHeight, occupied)
+      ) {
+        top = Math.max(0, top - SPAN_LABEL_CHIP_HEIGHT - 2)
+      }
+    }
+
+    const box = spanLabelBox(chosen, top, maxWidth)
+    occupied.push({
+      left: box.left - SPAN_LABEL_GAP,
+      right: box.right + SPAN_LABEL_GAP,
+      top: box.top - SPAN_LABEL_GAP,
+      bottom: box.bottom + SPAN_LABEL_GAP,
+    })
+
+    visuals.push({
+      key: group.key,
+      spanId: latest.id,
+      label: displayLabel,
+      title,
+      color: labelColor(latest.label, props.labels),
+      left: chosen.left,
+      top,
+      maxWidth,
+      alignEnd: chosen.alignEnd,
+      selected: isSelected,
+      linked: isLinked,
+      missing: uniqueLabels.some((label) => !props.labels.includes(label)),
+    })
+  }
+
+  return visuals
+}
+
+/**
+ * 从 anchorLeft 开始向右找第一个不与已放胶囊重叠的位置。
+ * 同一行起点上的多个实体（嵌套、同起点）因此会紧挨着排成「标签串」，
+ * 而不是第二个被推到整行末尾——后者看起来像凭空多出来一枚标签。
+ */
+function findSpanLabelInlineLeft(
+  anchorLeft: number,
+  top: number,
+  maxWidth: number,
+  occupied: SpanLabelBox[],
+  stageWidth: number,
+): number | null {
+  let left = Math.max(0, anchorLeft)
+  for (let step = 0; step <= occupied.length; step += 1) {
+    const box = spanLabelBox({ left, alignEnd: false }, top, maxWidth)
+    if (box.right > stageWidth) return null
+    const hit = occupied.find(
+      (taken) =>
+        box.left < taken.right &&
+        box.right > taken.left &&
+        box.top < taken.bottom &&
+        box.bottom > taken.top,
+    )
+    if (!hit) return left
+    left = hit.right + SPAN_LABEL_GAP
+  }
+  return null
+}
+
+function spanLabelBox(
+  position: { left: number; alignEnd: boolean },
+  top: number,
+  maxWidth: number,
+): SpanLabelBox {
+  return {
+    left: position.alignEnd ? position.left - maxWidth : position.left,
+    right: position.alignEnd ? position.left : position.left + maxWidth,
+    top,
+    bottom: top + SPAN_LABEL_CHIP_HEIGHT,
+  }
+}
+
+function isSpanLabelPlaceable(
+  position: { left: number; alignEnd: boolean },
+  top: number,
+  maxWidth: number,
+  stageWidth: number,
+  stageHeight: number,
+  occupied: SpanLabelBox[],
+): boolean {
+  const box = spanLabelBox(position, top, maxWidth)
+  // 必须完全落在 stage 内，否则会被正文卡片裁掉或盖到卡片边框上。
+  if (box.left < 0 || box.right > stageWidth) return false
+  if (box.top < 0 || box.bottom > stageHeight) return false
+  return !occupied.some(
+    (taken) =>
+      box.left < taken.right &&
+      box.right > taken.left &&
+      box.top < taken.bottom &&
+      box.bottom > taken.top,
+  )
+}
+
 watch(
   [spans, relations, selectedSpanId, selectedRelationIndex, linkedSpanIds, highlightSupported],
   () => scheduleMeasure(),
@@ -471,6 +900,19 @@ watch(
 watch(relations, () => {
   hoveredRelation.value = null
   setLinkedSpans([])
+})
+
+/*
+ * 标签名显示模式：写回本地偏好，并立刻重算布局。
+ * 不重算的话，切到「隐藏」后旧胶囊会一直留在屏幕上，直到下次滚动才消失。
+ */
+watch(spanLabelMode, (mode) => {
+  try {
+    window.localStorage.setItem(SPAN_LABEL_MODE_STORAGE_KEY, mode)
+  } catch {
+    // 写入失败只影响下次打开时的默认值，本次会话的显示效果不受影响。
+  }
+  scheduleMeasure()
 })
 
 /**
@@ -502,14 +944,21 @@ function handleImageLoad(): void {
   scheduleMeasure()
 }
 
+/* 视口/容器尺寸变化：排版会变，胶囊与曲线必须一起重测。 */
+function handleLayoutChange(): void {
+  scheduleMeasure()
+}
+
 onMounted(() => {
-  window.addEventListener('resize', scheduleMeasure)
+  // 先恢复显示模式偏好，再做首次测量，避免首帧先画出默认模式的胶囊再闪一次。
+  restoreSpanLabelMode()
+
+  window.addEventListener('resize', handleLayoutChange)
   bodyRef.value?.addEventListener('load', handleImageLoad, true)
   bodyRef.value?.addEventListener('error', handleImageLoad, true)
-  scrollRef.value?.addEventListener('scroll', scheduleMeasure, { passive: true })
 
   if (typeof ResizeObserver !== 'undefined' && stageRef.value) {
-    resizeObserver = new ResizeObserver(scheduleMeasure)
+    resizeObserver = new ResizeObserver(handleLayoutChange)
     resizeObserver.observe(stageRef.value)
   }
 
@@ -532,10 +981,9 @@ onBeforeUnmount(() => {
   ignoringScroll = false
   resizeObserver?.disconnect()
   resizeObserver = null
-  window.removeEventListener('resize', scheduleMeasure)
+  window.removeEventListener('resize', handleLayoutChange)
   bodyRef.value?.removeEventListener('load', handleImageLoad, true)
   bodyRef.value?.removeEventListener('error', handleImageLoad, true)
-  scrollRef.value?.removeEventListener('scroll', scheduleMeasure)
 })
 
 async function refreshLayout(): Promise<void> {
@@ -615,146 +1063,264 @@ defineExpose({
 
 <template>
   <div class="markdown-annotator">
-    <section class="annotation-tools" aria-label="实体与关系快捷操作">
-      <div class="tools-head">
-        <div class="tools-stats">
-          <span class="stats-eyebrow">Annotation</span>
-          <span class="stats-item">{{ canonicalText.length }} 字</span>
-          <span class="stats-divider" aria-hidden="true">·</span>
-          <span class="stats-item">{{ annotationCount }} 标注</span>
-          <span class="stats-divider" aria-hidden="true">·</span>
-          <span class="stats-item">{{ spans.length }} 实体</span>
-          <span class="stats-divider" aria-hidden="true">·</span>
-          <span class="stats-item">{{ relations.length }} 关系</span>
-          <span
-            v-if="!highlightSupported && spans.length > 0"
-            class="compat-badge"
-            title="当前浏览器不支持 CSS Custom Highlight API，已启用兼容高亮层"
-          >
-            兼容高亮
-          </span>
-          <slot name="save-status" />
-        </div>
-        <div class="tools-actions">
-          <button
-            type="button"
-            class="mx-btn btn-quiet mx-btn-sm"
-            :disabled="!canUndo"
-            title="撤销（Ctrl + Z）"
-            @click="undo"
-          >
-            撤销
-            <span class="kbd-hint">Ctrl Z</span>
-          </button>
-          <slot name="mode-toggle" />
-        </div>
-      </div>
-
-      <div class="chip-columns">
-        <div class="chip-column">
-          <div class="chip-head">
-            <h3 class="chip-title">实体标签</h3>
-            <span class="chip-hint">快捷键 1–9</span>
-          </div>
-          <div class="chip-row">
-            <button
-              v-for="(label, index) in labels"
-              :key="label"
-              type="button"
-              class="mx-label-chip"
-              :class="{ 'is-armed': Boolean(pendingSelection) }"
-              :style="labelChipStyle(label)"
-              :title="pendingSelection ? `应用标签：${label}` : '先在正文中选中文本'"
-              @click="handleLabelClick(label)"
+    <!--
+      工具区传送到工作区顶部的整宽挂载点（MixedWorkspace 的 #mw-annotation-bar），
+      让实体标签/关系类型/状态条横跨文本与 PDF，正文与 PDF 从同一高度开始。
+      Teleport 子树保留本组件的 scope 属性，原有 .annotation-tools 等样式继续生效。
+    -->
+    <Teleport to="#mw-annotation-bar">
+      <section class="annotation-tools" aria-label="实体与关系快捷操作">
+        <div class="tools-head">
+          <div class="tools-stats">
+            <span class="stats-eyebrow">Annotation</span>
+            <span class="stats-item">{{ canonicalText.length }} 字</span>
+            <span class="stats-divider" aria-hidden="true">·</span>
+            <span class="stats-item">{{ annotationCount }} 标注</span>
+            <span class="stats-divider" aria-hidden="true">·</span>
+            <span class="stats-item">{{ spans.length }} 实体</span>
+            <span class="stats-divider" aria-hidden="true">·</span>
+            <span class="stats-item">{{ relations.length }} 关系</span>
+            <span
+              v-if="!highlightSupported && spans.length > 0"
+              class="compat-badge"
+              title="当前浏览器不支持 CSS Custom Highlight API，已启用兼容高亮层"
             >
-              <span v-if="index < 9" class="chip-key">{{ index + 1 }}</span>
-              <span>{{ label }}</span>
-            </button>
-            <span v-if="labels.length === 0" class="chip-empty">项目未配置实体标签</span>
-          </div>
-        </div>
-
-        <div class="chip-column chip-column--relation">
-          <div class="chip-head">
-            <h3 class="chip-title">关系类型</h3>
-            <span class="chip-hint">Ctrl + 1–9</span>
-          </div>
-          <div class="chip-row">
-            <button
-              v-for="(type, index) in relationTypes"
-              :key="type"
-              type="button"
-              class="mx-label-chip relation-chip"
-              :class="{ 'is-armed': Boolean(pendingRelation) }"
-              :style="relationChipStyle(type)"
-              :title="pendingRelation ? `应用关系：${type}` : '先依次点击两个实体'"
-              @click="handleRelationClick(type)"
+              兼容高亮
+            </span>
+            <span
+              v-if="missingSpanCount > 0"
+              class="stats-missing"
+              title="这些实体引用的标签已不在项目字典中，可在左侧「字典缺失」处恢复"
             >
-              <span v-if="index < 9" class="chip-key chip-key--light">{{ index + 1 }}</span>
-              <span>{{ type }}</span>
+              {{ missingSpanCount }} 处缺失标签
+            </span>
+            <span v-if="spanLabelFocusHint" class="stats-hint">
+              标签名「仅选中」：点选实体后显示
+            </span>
+            <slot name="save-status" />
+          </div>
+          <div class="tools-actions">
+            <button
+              type="button"
+              class="mx-btn btn-quiet mx-btn-sm"
+              :disabled="!canUndo"
+              title="撤销（Ctrl + Z）"
+              @click="undo"
+            >
+              撤销
+              <span class="kbd-hint">Ctrl Z</span>
             </button>
-            <span v-if="relationTypes.length === 0" class="chip-empty">项目未配置关系类型</span>
+            <!--
+              标签名显示方式：紧邻操作按钮组，用户调整“正文上到底显示哪些名字”时
+              视线不用离开工具条；三段式比下拉更少一次点击。
+            -->
+            <div class="span-label-mode" role="group" aria-label="实体标签名显示方式">
+              <span class="span-label-mode-label" aria-hidden="true">标签名</span>
+              <button
+                v-for="option in spanLabelModes"
+                :key="option.value"
+                type="button"
+                class="span-label-mode-btn"
+                :class="{ 'is-active': spanLabelMode === option.value }"
+                :aria-pressed="spanLabelMode === option.value"
+                :title="option.title"
+                @click="setSpanLabelMode(option.value)"
+              >
+                {{ option.label }}
+              </button>
+            </div>
+            <!--
+              快捷键入口：用户看着 chip 上的徽标想改键时，视线正在工具条上，
+              入口就放在这里（与左侧字典卡片头部的按钮互为同一动作），
+              不必再回头去侧栏找。
+            -->
+            <button
+              type="button"
+              class="shortcut-entry-btn"
+              title="快捷键设置：为标签录制/修改快捷键"
+              @click="emit('edit-shortcuts')"
+            >
+              <svg
+                class="shortcut-entry-icon"
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.3"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+                focusable="false"
+              >
+                <rect x="1.8" y="4.2" width="12.4" height="7.6" rx="1.6" />
+                <path d="M4.2 6.6h.01M6.4 6.6h.01M8.6 6.6h.01M10.8 6.6h.01M4.2 8.8h.01M11.8 8.8h.01" />
+                <path d="M6 9.4h4" />
+              </svg>
+              快捷键设置
+            </button>
+            <slot name="mode-toggle" />
           </div>
         </div>
-      </div>
 
-      <div
-        class="inline-bar"
-        :class="{ 'is-pending': Boolean(pendingSelection || pendingRelation) }"
-        role="status"
-        aria-live="polite"
-      >
-        <template v-if="pendingSelection">
-          <span class="mx-status-dot" aria-hidden="true"></span>
-          <span class="inline-text">
-            已选中「{{ pendingText }}」· 点击实体标签或按 <kbd>1–9</kbd> 应用
-          </span>
-          <button type="button" class="inline-action" @click="cancelPendingSelection">取消</button>
-        </template>
+        <!--
+          关系列只在项目配置了关系类型时出现：没有关系类型时整列隐藏，
+          实体标签占满整宽，单行能多显示几个 chip，也少一层视觉噪音。
+        -->
+        <div class="chip-columns" :class="{ 'is-single': relationTypes.length === 0 }">
+          <div class="chip-column">
+            <div class="chip-head">
+              <h3 class="chip-title">实体标签</h3>
+              <span class="chip-hint">快捷键 1–9 · 可自定义</span>
+              <button
+                v-if="labelsOverflow"
+                type="button"
+                class="chip-expand-btn"
+                :aria-expanded="labelsExpanded"
+                aria-controls="annotator-label-chips"
+                :title="labelsExpanded ? '收起为单行' : '展开显示全部标签'"
+                @click="toggleLabelsExpanded"
+              >
+                {{ labelsExpanded ? '收起' : `展开全部 ${labels.length} 个` }}
+              </button>
+            </div>
+            <div
+              id="annotator-label-chips"
+              class="chip-row"
+              :class="{ 'is-expanded': labelsExpanded }"
+            >
+              <button
+                v-for="label in labels"
+                :key="label"
+                type="button"
+                class="mx-label-chip"
+                :class="{ 'is-armed': Boolean(pendingSelection) }"
+                :style="labelChipStyle(label)"
+                :title="
+                  shortcutBadge(label)
+                    ? `${pendingSelection ? '应用标签' : '先在正文中选中文本'}：${label}（快捷键 ${shortcutBadge(label)}）`
+                    : `${pendingSelection ? '应用标签' : '先在正文中选中文本'}：${label}`
+                "
+                @click="handleLabelClick(label)"
+              >
+                <span
+                  v-if="shortcutBadge(label)"
+                  class="chip-key"
+                  :class="{ 'is-combo': shortcutBadge(label).length > 1 }"
+                  aria-hidden="true"
+                >{{ shortcutBadge(label) }}</span>
+                <span>{{ label }}</span>
+              </button>
+              <span v-if="labels.length === 0" class="chip-empty">项目未配置实体标签</span>
+            </div>
+          </div>
 
-        <template v-else-if="pendingRelation">
-          <span class="mx-status-dot" aria-hidden="true"></span>
-          <span class="inline-text">
-            已连接 {{ pendingRelationText }} · 点击关系类型或按
-            <kbd>Ctrl</kbd> + <kbd>1–9</kbd> 应用
-          </span>
-          <button type="button" class="inline-action" @click="cancelPendingRelation">取消</button>
-        </template>
+          <div v-if="relationTypes.length > 0" class="chip-column chip-column--relation">
+            <div class="chip-head">
+              <h3 class="chip-title">关系类型</h3>
+              <span class="chip-hint">Ctrl + 1–9</span>
+              <button
+                v-if="relationsOverflow"
+                type="button"
+                class="chip-expand-btn"
+                :aria-expanded="relationsExpanded"
+                aria-controls="annotator-relation-chips"
+                :title="relationsExpanded ? '收起为单行' : '展开显示全部关系类型'"
+                @click="toggleRelationsExpanded"
+              >
+                {{ relationsExpanded ? '收起' : `展开全部 ${relationTypes.length} 个` }}
+              </button>
+            </div>
+            <div
+              id="annotator-relation-chips"
+              class="chip-row"
+              :class="{ 'is-expanded': relationsExpanded }"
+            >
+              <button
+                v-for="(type, index) in relationTypes"
+                :key="type"
+                type="button"
+                class="mx-label-chip relation-chip"
+                :class="{ 'is-armed': Boolean(pendingRelation) }"
+                :style="relationChipStyle(type)"
+                :title="pendingRelation ? `应用关系：${type}` : '先依次点击两个实体'"
+                @click="handleRelationClick(type)"
+              >
+                <span v-if="index < 9" class="chip-key chip-key--light">{{ index + 1 }}</span>
+                <span>{{ type }}</span>
+              </button>
+            </div>
+          </div>
+        </div>
 
-        <template v-else-if="selectedRelation">
-          <span class="mx-status-dot status-dot--relation" aria-hidden="true"></span>
-          <span class="inline-text">
-            关系「{{ selectedRelation.type }}」· {{ selectedRelationText }} ·
-            <kbd>Delete</kbd> 删除
-          </span>
-          <button type="button" class="inline-action inline-action--danger" @click="handleDeleteSelected">
-            删除关系
-          </button>
-        </template>
+        <!--
+          状态条只在“真的有状态”时出现：无待定选区/选中项/提示时整条不渲染，
+          空闲状态下不再白白占掉约 40px 的正文高度。
+        -->
+        <div
+          v-if="
+            pendingSelection ||
+            pendingRelation ||
+            selectedRelation ||
+            selectedSpan ||
+            localNotice
+          "
+          class="inline-bar"
+          :class="{
+            'is-pending': Boolean(pendingSelection || pendingRelation),
+            'is-warning': showMissingLabelWarning,
+          }"
+          role="status"
+          aria-live="polite"
+        >
+          <template v-if="pendingSelection">
+            <span class="mx-status-dot" aria-hidden="true"></span>
+            <span class="inline-text">
+              已选中「{{ pendingText }}」· 点击实体标签或按标签上的快捷键应用
+            </span>
+            <button type="button" class="inline-action" @click="cancelPendingSelection">取消</button>
+          </template>
 
-        <template v-else-if="selectedSpan">
-          <span class="mx-status-dot" aria-hidden="true"></span>
-          <span class="inline-text">
-            实体「{{ selectedSpanText }}」· 再点一个实体建立关系 · <kbd>Delete</kbd> 删除
-          </span>
-          <button type="button" class="inline-action inline-action--danger" @click="handleDeleteSelected">
-            删除实体
-          </button>
-        </template>
+          <template v-else-if="pendingRelation">
+            <span class="mx-status-dot" aria-hidden="true"></span>
+            <span class="inline-text">
+              已连接 {{ pendingRelationText }} · 点击关系类型或按
+              <kbd>Ctrl</kbd> + <kbd>1–9</kbd> 应用
+            </span>
+            <button type="button" class="inline-action" @click="cancelPendingRelation">取消</button>
+          </template>
 
-        <template v-else-if="localNotice">
-          <span class="mx-status-dot status-dot--muted" aria-hidden="true"></span>
-          <span class="inline-text">{{ localNotice }}</span>
-        </template>
+          <template v-else-if="selectedRelation">
+            <span class="mx-status-dot status-dot--relation" aria-hidden="true"></span>
+            <span class="inline-text">
+              关系「{{ selectedRelation.type }}」· {{ selectedRelationText }} ·
+              <kbd>Delete</kbd> 删除
+            </span>
+            <button type="button" class="inline-action inline-action--danger" @click="handleDeleteSelected">
+              删除关系
+            </button>
+          </template>
 
-        <template v-else>
-          <span class="mx-status-dot status-dot--muted" aria-hidden="true"></span>
-          <span class="inline-text">
-            选中正文文本添加实体；依次点击两个实体后选择关系。Delete 删除，Ctrl+Z 撤销。
-          </span>
-        </template>
-      </div>
-    </section>
+          <template v-else-if="selectedSpan">
+            <span
+              class="mx-status-dot"
+              :class="{ 'status-dot--warning': selectedSpanLabelMissing }"
+              aria-hidden="true"
+            ></span>
+            <span class="inline-text">
+              实体「{{ selectedSpanText }}」· 标签「{{ selectedSpanLabel }}」· 再点一个实体建立关系 ·
+              <kbd>Delete</kbd> 删除<span v-if="selectedSpanLabelMissing" class="inline-missing">（字典缺失，可在左侧恢复）</span>
+            </span>
+            <button type="button" class="inline-action inline-action--danger" @click="handleDeleteSelected">
+              删除实体
+            </button>
+          </template>
+
+          <template v-else-if="localNotice">
+            <span class="mx-status-dot status-dot--muted" aria-hidden="true"></span>
+            <span class="inline-text">{{ localNotice }}</span>
+          </template>
+        </div>
+      </section>
+    </Teleport>
 
     <div ref="scrollRef" class="annotator-scroll" @scroll.passive="handleScroll">
       <article class="md-paper">
@@ -791,6 +1357,36 @@ defineExpose({
               </section>
             </template>
             <div v-else class="md-block-body" v-html="renderedHtml"></div>
+          </div>
+
+          <!--
+            实体标签名叠加层：只做视觉投影，aria-hidden + pointer-events:none，
+            不参与命中测试，因此不会挡住正文的选区拖拽、点击与链接。
+          -->
+          <div
+            v-if="spanLabelVisuals.length > 0"
+            class="span-label-layer"
+            aria-hidden="true"
+          >
+            <span
+              v-for="chip in spanLabelVisuals"
+              :key="chip.key"
+              class="span-label-chip"
+              :class="{
+                'is-selected': chip.selected,
+                'is-linked': chip.linked,
+                'is-missing': chip.missing,
+                'is-end': chip.alignEnd,
+              }"
+              :style="{
+                left: `${chip.left}px`,
+                top: `${chip.top}px`,
+                maxWidth: `${chip.maxWidth}px`,
+                background: chip.color,
+              }"
+              :title="chip.title"
+              @click.stop="handleSpanChipClick(chip.spanId)"
+            >{{ chip.label }}</span>
           </div>
 
           <div
@@ -927,11 +1523,18 @@ defineExpose({
 /* ------------------------------------------------------------
    快捷操作卡片
    ------------------------------------------------------------ */
+/*
+ * 卡片现在由 Teleport 放到工作区顶部的整宽顶栏里。
+ * 默认单行紧凑：减少上下留白，尽量把纵向空间留给正文；
+ * 横向留白与外层栏（16px）保持一致，避免出现“卡片里一层、卡片外一层”的双层大留白。
+ */
 .annotation-tools {
   flex-shrink: 0;
-  padding: 12px 16px 10px;
+  min-width: 0;
+  /* 顶部/底部各 8px：整条工具区高度控制在约 100px，把纵向空间留给正文。 */
+  padding: 8px 14px;
   border: 1px solid var(--lf-line);
-  border-radius: 16px;
+  border-radius: 14px;
   background: var(--lf-surface);
   box-shadow: var(--lf-shadow-xs);
 }
@@ -941,8 +1544,8 @@ defineExpose({
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 12px;
-  margin-bottom: 10px;
+  gap: 10px;
+  margin-bottom: 6px;
 }
 
 .tools-stats {
@@ -990,6 +1593,33 @@ defineExpose({
   border-radius: 999px;
   background: var(--warning-bg, #faf2e1);
   color: var(--warning, #a9761e);
+  font-size: 9.5px;
+  white-space: nowrap;
+}
+
+/* 字典缺失警示徽标：用警示色 + 实心边框，避免与“灰色即无关”混淆。 */
+.stats-missing {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border: 1px solid rgba(169, 118, 30, 0.45);
+  border-radius: 999px;
+  background: var(--warning-bg, #faf2e1);
+  color: var(--warning, #a9761e);
+  font-family: var(--lf-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* 「仅选中」空态的解释性提示：只做弱提醒，不抢缺失标签警示的注意力。 */
+.stats-hint {
+  padding: 1px 6px;
+  border: 1px dashed var(--lf-line-strong);
+  border-radius: 999px;
+  color: var(--lf-ink-3);
+  font-family: var(--lf-mono);
   font-size: 9.5px;
   white-space: nowrap;
 }
@@ -1046,6 +1676,120 @@ defineExpose({
   font-size: 11px;
 }
 
+/*
+ * 标签名显示方式：与 27px 高的按钮组同排，内部也是 27px 高，
+ * 视觉上是一枚「带前缀文字的分段开关」，而不是三个独立按钮。
+ */
+.span-label-mode {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+  min-height: 27px;
+}
+
+.span-label-mode-label {
+  margin-right: 1px;
+  font-family: var(--lf-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--lf-ink-3);
+  white-space: nowrap;
+}
+
+.span-label-mode-label::after {
+  content: '：';
+  color: var(--lf-ink-4);
+}
+
+.span-label-mode-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 27px;
+  padding: 0 8px;
+  border: 1px solid var(--lf-line);
+  border-radius: 7px;
+  background: var(--lf-surface);
+  color: var(--lf-ink-3);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 180ms var(--lf-ease),
+    border-color 180ms var(--lf-ease),
+    color 180ms var(--lf-ease);
+}
+
+.span-label-mode-btn:hover {
+  border-color: var(--lf-line-strong);
+  color: var(--lf-ink);
+}
+
+.span-label-mode-btn.is-active {
+  border-color: rgba(228, 87, 46, 0.35);
+  background: var(--lf-signal-soft);
+  color: var(--lf-signal-ink);
+  font-weight: 600;
+}
+
+.span-label-mode-btn:focus-visible {
+  outline: none;
+  border-color: var(--lf-signal);
+  box-shadow: 0 0 0 3px rgba(228, 87, 46, 0.22);
+}
+
+/*
+ * 工具条「快捷键设置」入口：与左侧字典卡片头部同一套 accent 胶囊语言，
+ * 但工具条本身高 27px 的按钮组，这里对齐到 27px 保证同排不参差。
+ */
+.shortcut-entry-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 27px;
+  padding: 0 9px;
+  border: 1px solid rgba(228, 87, 46, 0.35);
+  border-radius: 8px;
+  background: var(--lf-signal-soft);
+  color: var(--lf-signal-ink);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 180ms var(--lf-ease),
+    border-color 180ms var(--lf-ease),
+    color 180ms var(--lf-ease),
+    box-shadow 180ms var(--lf-ease);
+}
+
+.shortcut-entry-icon {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
+}
+
+.shortcut-entry-btn:hover {
+  border-color: var(--lf-signal);
+  background: #F7DACF;
+  color: var(--lf-signal-deep);
+  box-shadow: 0 6px 14px -12px rgba(228, 87, 46, 0.6);
+}
+
+.shortcut-entry-btn:focus-visible {
+  outline: none;
+  border-color: var(--lf-signal);
+  box-shadow: 0 0 0 3px rgba(228, 87, 46, 0.22);
+}
+
 .kbd-hint {
   font-family: var(--lf-mono);
   font-size: 9px;
@@ -1054,8 +1798,19 @@ defineExpose({
 
 .chip-columns {
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
+  /* 实体标签占主要宽度（整宽顶栏下可容纳更多 chip），关系列保持可读的最小宽度。 */
+  grid-template-columns: minmax(0, 1fr) minmax(200px, 260px);
   gap: 16px;
+}
+
+/* 项目没有关系类型：整列隐藏，实体标签独占整宽。 */
+.chip-columns.is-single {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+}
+
+.chip-columns.is-single .chip-column {
+  padding-right: 0;
 }
 
 .chip-column {
@@ -1073,7 +1828,7 @@ defineExpose({
   display: flex;
   align-items: baseline;
   gap: 8px;
-  margin-bottom: 7px;
+  margin-bottom: 4px;
 }
 
 .chip-title {
@@ -1091,10 +1846,72 @@ defineExpose({
   color: var(--lf-ink-3);
 }
 
+/* 展开全部 / 收起：只在超出阈值时出现，贴右侧，不挤占标题与快捷键提示。 */
+.chip-expand-btn {
+  flex-shrink: 0;
+  align-self: center;
+  margin-left: auto;
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  color: var(--lf-signal-deep);
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.chip-expand-btn:hover {
+  color: var(--lf-ink);
+}
+
+/*
+ * 默认单行横向滚动：标签多时不会把顶栏撑成多行。
+ * padding-bottom 留 2px，避免 chip 的 hover 阴影被滚动容器裁掉。
+ */
 .chip-row {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 6px;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 2px;
+  scrollbar-width: thin;
+}
+
+.chip-row::-webkit-scrollbar {
+  height: 5px;
+}
+
+.chip-row::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.chip-row::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(23, 24, 27, 0.16);
+}
+
+.chip-row::-webkit-scrollbar-thumb:hover {
+  background: rgba(23, 24, 27, 0.3);
+}
+
+/* 展开态才换行，完整展示所有标签。 */
+.chip-row.is-expanded {
+  flex-wrap: wrap;
+  overflow: visible;
+  padding-bottom: 0;
+}
+
+/* chip 自身不参与拉伸/收缩，保证横向滚动时宽度稳定。 */
+.chip-row > .mx-label-chip,
+.chip-row > .chip-empty {
+  flex: 0 0 auto;
 }
 
 .mx-label-chip {
@@ -1149,23 +1966,47 @@ defineExpose({
   border-color: rgba(23, 24, 27, 0.5);
 }
 
+/*
+ * 快捷键徽标：原来半透明白在浅色 chip 上几乎看不清，
+ * 改为接近实白的底 + 细描边 + 600 字重，保证「数字键」本身成为可读信息。
+ */
 .chip-key {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   min-width: 14px;
   padding: 1px 4px;
+  border: 1px solid rgba(23, 24, 27, 0.1);
   border-radius: 4px;
-  background: rgba(255, 255, 255, 0.55);
+  background: rgba(255, 255, 255, 0.92);
   color: var(--lf-ink-2);
   font-family: var(--lf-mono);
   font-size: 9px;
+  font-weight: 600;
   line-height: 1.3;
 }
 
+/* 关系 chip 是深色底，白描边 + 半透明白保留层级但不再发灰。 */
 .chip-key--light {
-  background: rgba(255, 255, 255, 0.16);
-  color: rgba(255, 253, 249, 0.86);
+  border-color: rgba(255, 253, 249, 0.3);
+  background: rgba(255, 255, 255, 0.22);
+  color: rgba(255, 253, 249, 0.95);
+}
+
+/*
+ * 自定义组合键可能很长（Alt+Shift+P、Ctrl+Alt+Shift+K），
+ * 徽标限宽省略，保证 chip 不因快捷键长度而变形。
+ * 底色用 signal-soft 与默认数字键区分：长组合键更醒目，但尺寸不超出 chip。
+ */
+.chip-key.is-combo {
+  max-width: 84px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-color: rgba(228, 87, 46, 0.28);
+  background: var(--lf-signal-soft);
+  color: var(--lf-signal-ink);
+  letter-spacing: -0.02em;
 }
 
 .chip-empty {
@@ -1174,14 +2015,14 @@ defineExpose({
   color: var(--lf-ink-3);
 }
 
-/* 内联提示条：不使用弹窗 */
+/* 内联提示条：不使用弹窗；仅在有待定选区/选中项/提示时渲染。 */
 .inline-bar {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 31px;
-  margin-top: 10px;
-  padding: 7px 10px;
+  min-height: 28px;
+  margin-top: 8px;
+  padding: 6px 10px;
   border: 1px solid var(--lf-line);
   border-radius: 9px;
   background: var(--lf-sunken);
@@ -1194,6 +2035,19 @@ defineExpose({
   border-color: rgba(228, 87, 46, 0.32);
   background: var(--lf-signal-soft);
   color: var(--lf-signal-ink);
+}
+
+/* 选中实体的标签已不在字典：整条提示改用警示色，不只靠灰色高亮传达。 */
+.inline-bar.is-warning {
+  border-color: rgba(169, 118, 30, 0.45);
+  background: var(--warning-bg, #faf2e1);
+  color: #7d5710;
+}
+
+.inline-missing {
+  margin-left: 2px;
+  font-weight: 600;
+  color: var(--warning, #a9761e);
 }
 
 .inline-text {
@@ -1227,6 +2081,10 @@ defineExpose({
 
 .status-dot--muted {
   background: var(--lf-ink-4);
+}
+
+.status-dot--warning {
+  background: var(--warning, #a9761e);
 }
 
 .inline-action {
@@ -1367,10 +2225,99 @@ defineExpose({
   box-shadow: inset 0 0 0 2px var(--lf-signal-deep);
 }
 
-.relation-layer {
+/*
+ * 实体标签名叠加层。
+ * 层级在正文（z-index:1）之上、关系曲线（z-index:3）之下：
+ * 曲线跨行穿行时不能被胶囊切断，而胶囊本身绝不能吃事件。
+ */
+.span-label-layer {
   position: absolute;
   inset: 0;
   z-index: 2;
+  pointer-events: none;
+}
+
+.span-label-chip {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  height: 14px;
+  padding: 0 4px;
+  border-radius: 4px;
+  border: 1px solid rgba(35, 29, 19, 0.16);
+  /*
+   * 行间空白只有约 11px，胶囊必然压住上一行字底 2–3px。
+   * 纸色只放在上缘：既把胶囊与上一行文字隔开，又不会在本行高亮底带上切出白色缺口。
+   */
+  box-shadow:
+    0 -1.5px 0 0 var(--lf-paper),
+    0 2px 6px -3px rgba(35, 29, 19, 0.4);
+  color: #2c2b27;
+  /* 中文标签没有等宽需求：等宽字体族无中文字形，10px 下会回落到系统字造成笔画粘连。 */
+  font-family: 'Geist', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 1;
+  /* 胶囊可点击选中对应实体；层级本身仍是 pointer-events:none，只有胶囊吃事件。 */
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+/* 悬停反馈：点之前就能确认它是可点击的控件，而不是纯装饰。 */
+.span-label-chip:hover {
+  border-color: rgba(35, 29, 19, 0.38);
+  box-shadow:
+    0 -1.5px 0 0 var(--lf-paper),
+    0 0 0 1px rgba(35, 29, 19, 0.18),
+    0 3px 8px -4px rgba(35, 29, 19, 0.5);
+}
+
+/* 靠近右边界时改为向左生长：left 是锚点，用 transform 让右边缘贴合。 */
+.span-label-chip.is-end {
+  transform: translateX(-100%);
+}
+
+.span-label-chip.is-linked {
+  border-color: rgba(196, 71, 34, 0.45);
+}
+
+.span-label-chip.is-selected {
+  z-index: 1;
+  border-color: var(--lf-signal-deep);
+  box-shadow:
+    0 -1.5px 0 0 var(--lf-paper),
+    0 0 0 1.5px rgba(196, 71, 34, 0.55),
+    0 3px 8px -4px rgba(35, 29, 19, 0.5);
+}
+
+/* 字典缺失标签用虚线 + 深警示字色：与调色板里的灰色标签明确区分（灰底上仍要达到可读对比度）。 */
+.span-label-chip.is-missing {
+  border-style: dashed;
+  border-color: rgba(120, 82, 12, 0.9);
+  color: #33260a;
+}
+
+/*
+ * 窄屏正文会降到 14.5px / 1.8（行高约 26px，行间只剩约 9px）。
+ * 此时把胶囊压到 13px / 9.5px，避免压掉上一行近一个字高。
+ */
+@media (max-width: 720px) {
+  .span-label-chip {
+    height: 13px;
+    padding: 0 4px;
+    font-size: 9.5px;
+  }
+}
+
+.relation-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
   width: 100%;
   height: 100%;
   overflow: visible;
@@ -1422,7 +2369,7 @@ defineExpose({
 .canvas-state {
   position: absolute;
   inset: 20px;
-  z-index: 3;
+  z-index: 4;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1541,3 +2488,4 @@ defineExpose({
   }
 }
 </style>
+

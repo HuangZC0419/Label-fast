@@ -54,11 +54,12 @@ const emit = defineEmits<{
     <div class="file-scroll">
       <p v-if="loading && files.length === 0" class="file-loading">正在读取文件…</p>
 
+      <!-- 上传入口已移到顶栏「导入数据」，空状态必须指路，否则用户会继续在侧栏找上传。 -->
       <EmptyState
         v-else-if="files.length === 0"
         compact
         title="Nothing filed yet"
-        message="上传 PDF 或图片，转换完成后即可标注。"
+        message="点击顶部「导入数据」上传 PDF 或图片"
       />
 
       <div
@@ -220,3 +221,4 @@ const emit = defineEmits<{
   color: var(--ink-4);
 }
 </style>
+

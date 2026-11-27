@@ -1,4 +1,4 @@
-"""项目 ZIP 导出与图谱拉取路由。"""
+"""项目 ZIP 导出、图谱拉取与多项目 Excel 明细导出路由。"""
 
 from __future__ import annotations
 
@@ -13,6 +13,8 @@ from fastapi import APIRouter
 from fastapi.responses import FileResponse, Response
 from starlette.background import BackgroundTask
 
+from schemas import ExcelExportRequest
+from services.excel_export_service import build_excel_export, suggested_filename
 from services.export_service import (
     _assign_export_stems,
     _load_blocks_safe,
@@ -33,6 +35,9 @@ from utils import utc_now
 router = APIRouter(prefix="/api/projects", tags=["export"])
 
 GRAPH_MEDIA_TYPE = "application/x-ndjson; charset=utf-8"
+EXCEL_MEDIA_TYPE = (
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+)
 
 
 def _remove_file(path: str) -> None:
@@ -40,6 +45,36 @@ def _remove_file(path: str) -> None:
         os.unlink(path)
     except FileNotFoundError:
         pass
+
+
+@router.post("/export-excel")
+async def export_projects_excel(payload: ExcelExportRequest) -> FileResponse:
+    """按所选项目导出标注明细工作簿。
+
+    路径故意不带 ``{project_id}``：导出范围由请求体里的多选列表决定，
+    资源不是单个项目。它声明在动态 GET 路由之前，避免与
+    ``/{project_id}/...`` 系列产生匹配歧义。
+
+    生成过程读大量标注 JSON 并写 xlsx，全是阻塞 IO，因此放到线程池；
+    失败时先删除 mkstemp 留下的空文件再把业务异常抛给全局处理器。
+    """
+
+    fd, temp_name = tempfile.mkstemp(prefix="label-fast-excel-", suffix=".xlsx")
+    os.close(fd)
+    workbook_path = Path(temp_name)
+    try:
+        await asyncio.to_thread(
+            build_excel_export, payload.project_ids, workbook_path
+        )
+    except BaseException:
+        workbook_path.unlink(missing_ok=True)
+        raise
+    return FileResponse(
+        workbook_path,
+        media_type=EXCEL_MEDIA_TYPE,
+        filename=suggested_filename(),
+        background=BackgroundTask(_remove_file, str(workbook_path)),
+    )
 
 
 @router.get("/{project_id}/export-zip")

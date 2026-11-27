@@ -20,12 +20,14 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 import convert
 import engine
 import mineru_engine
+import region_ocr
 from config import (
     ALLOWED_UPLOADS,
     DEFAULT_DPI,
     DEFAULT_ENABLE_FORMULA,
     DEFAULT_ENABLE_TABLE,
     MAX_DPI,
+    MAX_REGION_OCR_BYTES,
     MAX_UPLOAD_BYTES,
     MIN_DPI,
     MINERU_API_URL,
@@ -154,6 +156,7 @@ async def _run_task(task_id: str) -> None:
             dpi=int(options["dpi"]),
             progress=on_progress,
             engine=options.get("engine", ""),
+            parse_method=options.get("parse_method", "auto"),
         )
         _store.update(
             task_id,
@@ -338,6 +341,7 @@ def health() -> dict:
         "engine": selected,
         "engine_name": "MinerU" if selected == "mineru" else "PP-StructureV3",
         "engine_loaded": engine.pipeline_loaded() if selected == "paddle" else False,
+        "region_ocr_loaded": region_ocr.pipeline_loaded(),
         "mineru_available": mineru_ok,
         "mineru_reason": mineru_reason,
         "mineru_mode": (MINERU_MODE or "auto").strip().lower() or "auto",
@@ -352,6 +356,46 @@ def health() -> dict:
     }
 
 
+@app.post("/ocr/region", tags=["ocr"])
+async def recognize_region(file: UploadFile = File(...)) -> dict:
+    """图表截图的小图 OCR：只返回文字行，用于弹窗自动预填标题。
+
+    与 /convert 完全独立：不落盘、不建任务、不占用 MinerU；
+    模型随 rapidocr-onnxruntime 内置，单张小图通常 1–2 秒。
+    """
+
+    _filename, extension, _media_type = _clean_filename(file.filename)
+    if extension not in {".png", ".jpg", ".jpeg"}:
+        raise WorkerError(400, "小图 OCR 仅支持 PNG、JPG、JPEG")
+
+    try:
+        content = await file.read(MAX_REGION_OCR_BYTES + 1)
+    finally:
+        await file.close()
+
+    if not content:
+        raise WorkerError(400, "图片内容为空")
+    if len(content) > MAX_REGION_OCR_BYTES:
+        limit = MAX_REGION_OCR_BYTES // (1024 * 1024)
+        raise WorkerError(413, f"截图超过 {limit}MB 限制")
+    if not _validate_header(extension, content[:32]):
+        raise WorkerError(400, "图片内容与扩展名不匹配")
+
+    started = time.perf_counter()
+    try:
+        lines = await asyncio.to_thread(region_ocr.recognize, content)
+    except RuntimeError as exc:
+        raise WorkerError(503, str(exc)) from exc
+    except Exception as exc:  # 模型推理失败不应拖垮整个 Worker
+        logger.exception("小图 OCR 失败")
+        raise WorkerError(500, "小图 OCR 失败") from exc
+
+    return {
+        "lines": lines,
+        "elapsed_ms": round((time.perf_counter() - started) * 1000),
+    }
+
+
 @app.post("/convert", tags=["tasks"])
 async def create_conversion(
     file: UploadFile = File(...),
@@ -359,6 +403,7 @@ async def create_conversion(
     enable_formula: bool = Form(DEFAULT_ENABLE_FORMULA),
     dpi: int = Form(DEFAULT_DPI),
     engine: str = Form(""),
+    parse_method: str = Form("auto"),
 ) -> dict:
     if dpi < MIN_DPI or dpi > MAX_DPI:
         raise WorkerError(400, f"dpi 必须在 {MIN_DPI} 到 {MAX_DPI} 之间")
@@ -366,6 +411,10 @@ async def create_conversion(
     engine_mode = (engine or "").strip().lower()
     if engine_mode and engine_mode not in {"auto", "mineru", "paddle"}:
         raise WorkerError(400, "engine 仅支持 auto、mineru 或 paddle")
+
+    method = (parse_method or "auto").strip().lower() or "auto"
+    if method not in {"auto", "txt", "ocr"}:
+        raise WorkerError(400, "parse_method 仅支持 auto、txt 或 ocr")
 
     filename, extension, _media_type = _clean_filename(file.filename)
     task_id = str(uuid.uuid4())
@@ -396,6 +445,7 @@ async def create_conversion(
             "enable_formula": bool(enable_formula),
             "dpi": int(dpi),
             "engine": engine_mode,
+            "parse_method": method,
         },
     )
     background = asyncio.create_task(_run_task(task_id), name=f"ocr-task-{task_id}")

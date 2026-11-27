@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { FigureAnnotation, FigureDraftPayload } from '../../types'
-import { figureAssetUrl } from '../../api/client'
+import { figureAssetUrl, recognizeFigureCaption } from '../../api/client'
 
 /**
  * 图表（截图）元数据弹窗。
@@ -45,10 +45,83 @@ const editable = computed(() => props.mode === 'edit')
 const kind = ref<FigureAnnotation['kind']>(props.figure?.kind ?? 'figure')
 const caption = ref(props.figure?.caption ?? '')
 const note = ref(props.figure?.note ?? '')
+/** 用户是否手动选过「图/表」；选过之后自动识别不再改类型。 */
+const kindTouched = ref(false)
 
 const localError = ref('')
 const previewFailed = ref(false)
+const previewZoomed = ref(false)
+/** 放大预览图片的原始尺寸；加载完成后按视口计算显示尺寸。 */
+const zoomNatural = ref<{ width: number; height: number } | null>(null)
 const captionInputRef = ref<HTMLInputElement | null>(null)
+
+/* ============================================================
+   标题自动识别（截图小图 OCR）
+   ============================================================ */
+
+const ocrLoading = ref(false)
+/** OCR 给出的标题建议；没有命中时为空串。 */
+const ocrSuggestion = ref('')
+/** 识别结果的说明文案（空 = 不展示）。 */
+const ocrHint = ref('')
+/** 用户是否手动改过标题；改过之后自动识别不再覆盖。 */
+const captionTouched = ref(false)
+let ocrToken = 0
+
+/**
+ * 把截图预览的 data URL 转成 Blob 再上传。
+ * 预览本身就是 PNG data URL，不额外触发一次离屏截图。
+ */
+async function dataUrlToBlob(url: string): Promise<Blob> {
+  const response = await fetch(url)
+  return response.blob()
+}
+
+/** 发起一次小图 OCR；失败只提示手动填写，不阻塞创建。 */
+async function runCaptionOcr(): Promise<void> {
+  if (editable.value || props.submitting) return
+  const url = props.previewUrl
+  if (!url || !url.startsWith('data:image/')) return
+
+  const token = ++ocrToken
+  ocrLoading.value = true
+  ocrHint.value = ''
+  ocrSuggestion.value = ''
+
+  try {
+    const blob = await dataUrlToBlob(url)
+    const result = await recognizeFigureCaption(props.fileId, blob)
+    if (token !== ocrToken) return
+
+    const suggestion = (result.caption || '').trim()
+    if (!suggestion) {
+      ocrHint.value = result.text.trim()
+        ? '图中未识别到「图 X … / 表 X …」样式的标题，可手动填写'
+        : '图中没有识别到文字，请手动填写'
+      return
+    }
+
+    ocrSuggestion.value = suggestion
+    if (!captionTouched.value && !caption.value.trim()) {
+      caption.value = suggestion
+      ocrHint.value = `已自动填入「${suggestion}」，可直接修改`
+    } else {
+      ocrHint.value = `识别到标题「${suggestion}」，可一键填入`
+    }
+  } catch {
+    if (token === ocrToken) ocrHint.value = '自动识别暂不可用，请手动填写'
+  } finally {
+    if (token === ocrToken) ocrLoading.value = false
+  }
+}
+
+/** 用户手动点了「填入」：覆盖当前标题。 */
+function applyOcrSuggestion(): void {
+  if (!ocrSuggestion.value) return
+  caption.value = ocrSuggestion.value
+  captionTouched.value = true
+  ocrHint.value = `已填入「${ocrSuggestion.value}」，可直接修改`
+}
 
 /* ============================================================
    展示数据
@@ -87,8 +160,23 @@ watch(previewSource, () => {
 
 function chooseKind(next: FigureAnnotation['kind']): void {
   if (editable.value || props.submitting || kind.value === next) return
+  kindTouched.value = true
   kind.value = next
 }
+
+/*
+ * 标题以「图」「表」开头时自动切换类型：
+ * - OCR 自动填的标题（如「表1 公称尺寸范围」）会让类型直接落到「表」；
+ * - 用户手动输入/粘贴的标题同理；
+ * - 用户手动点过类型后（kindTouched）不再覆盖，避免抢操作。
+ */
+watch(caption, (value) => {
+  if (editable.value || kindTouched.value) return
+  const text = String(value ?? '').trim()
+  if (!text) return
+  if (text.startsWith('表')) kind.value = 'table'
+  else if (text.startsWith('图')) kind.value = 'figure'
+})
 
 function handleSubmit(): void {
   if (props.submitting) return
@@ -125,11 +213,49 @@ function requestDelete(): void {
 }
 
 function handleKeydown(event: KeyboardEvent): void {
+  // 放大预览时 Esc 先关预览，不要直接关掉整个图表弹窗。
+  if (event.key === 'Escape' && previewZoomed.value) {
+    event.preventDefault()
+    previewZoomed.value = false
+    return
+  }
   if (event.key === 'Escape') {
     event.preventDefault()
     requestClose()
   }
 }
+
+function openPreviewZoom(): void {
+  if (!previewSource.value || previewFailed.value) return
+  zoomNatural.value = null
+  previewZoomed.value = true
+}
+
+function closePreviewZoom(): void {
+  previewZoomed.value = false
+}
+
+/** 加载完成后按「视口 92% 宽 / 86% 高」等比放大，小截图也能看清细节。 */
+function handleZoomImageLoad(event: Event): void {
+  const image = event.target as HTMLImageElement | null
+  if (!image || !image.naturalWidth || !image.naturalHeight) return
+  zoomNatural.value = { width: image.naturalWidth, height: image.naturalHeight }
+}
+
+const zoomImageStyle = computed<Record<string, string>>(() => {
+  const natural = zoomNatural.value
+  if (!natural) return {}
+  const maxWidth = window.innerWidth * 0.92
+  const maxHeight = window.innerHeight * 0.86
+  // 最多放大 4 倍，避免把很小的截图糊成色块。
+  const scale = Math.min(maxWidth / natural.width, maxHeight / natural.height, 4)
+  const width = Math.max(160, Math.round(natural.width * scale))
+  const style: Record<string, string> = {
+    width: `${width}px`,
+    height: `${Math.round((width * natural.height) / natural.width)}px`,
+  }
+  return style
+})
 
 /* ============================================================
    生命周期
@@ -142,9 +268,12 @@ onMounted(() => {
   document.body.style.overflow = 'hidden'
   window.addEventListener('keydown', handleKeydown)
   void nextTick(() => captionInputRef.value?.focus())
+  // 新建图表时自动识别截图里的「图 3 XXXX」标题；编辑模式不覆盖已有标题。
+  if (!editable.value && props.previewUrl) void runCaptionOcr()
 })
 
 onBeforeUnmount(() => {
+  ocrToken += 1
   document.body.style.overflow = previousBodyOverflow
   window.removeEventListener('keydown', handleKeydown)
 })
@@ -180,7 +309,19 @@ onBeforeUnmount(() => {
 
           <div class="fd-body">
             <div class="fd-preview">
-              <div class="fd-preview-frame" :class="{ 'is-missing': !previewSource || previewFailed }">
+              <div
+                class="fd-preview-frame"
+                :class="{
+                  'is-missing': !previewSource || previewFailed,
+                  'is-zoomable': Boolean(previewSource) && !previewFailed,
+                }"
+                :role="previewSource && !previewFailed ? 'button' : undefined"
+                :tabindex="previewSource && !previewFailed ? 0 : undefined"
+                :aria-label="previewSource && !previewFailed ? '放大查看截图' : undefined"
+                @click="openPreviewZoom"
+                @keydown.enter.prevent="openPreviewZoom"
+                @keydown.space.prevent="openPreviewZoom"
+              >
                 <img
                   v-if="previewSource && !previewFailed"
                   :src="previewSource"
@@ -195,6 +336,9 @@ onBeforeUnmount(() => {
                   </svg>
                   <span>{{ previewFailed ? '截图资产缺失' : '暂无截图预览' }}</span>
                 </div>
+                <span v-if="previewSource && !previewFailed" class="fd-preview-zoom">
+                  点击放大
+                </span>
               </div>
               <p class="fd-preview-meta">
                 第 {{ page }} 页 · bbox {{ bboxText }}
@@ -236,8 +380,45 @@ onBeforeUnmount(() => {
                   maxlength="500"
                   placeholder="例如：OD·JZ型端子结构"
                   :disabled="submitting"
+                  @input="captionTouched = true"
                 />
               </label>
+
+              <!--
+                截图标题自动预填：新建图表时对截图像素跑一次小图 OCR，
+                命中「图 3 XXXX / 表 2 XXXX」就直接填进标题；识别失败不影响提交。
+              -->
+              <div
+                v-if="!editable && previewUrl"
+                class="fd-ocr"
+                role="status"
+                aria-live="polite"
+              >
+                <span v-if="ocrLoading" class="fd-ocr-state is-loading">
+                  <span class="fd-ocr-dot" aria-hidden="true"></span>
+                  正在识别截图中的标题…
+                </span>
+                <template v-else>
+                  <span class="fd-ocr-state">{{ ocrHint }}</span>
+                  <button
+                    v-if="ocrSuggestion && caption !== ocrSuggestion"
+                    type="button"
+                    class="fd-ocr-action"
+                    @click="applyOcrSuggestion"
+                  >
+                    填入
+                  </button>
+                  <button
+                    v-if="ocrHint"
+                    type="button"
+                    class="fd-ocr-action"
+                    :disabled="submitting"
+                    @click="runCaptionOcr"
+                  >
+                    重新识别
+                  </button>
+                </template>
+              </div>
 
               <label class="fd-field">
                 <span class="fd-field-label">备注</span>
@@ -283,6 +464,29 @@ onBeforeUnmount(() => {
           </footer>
         </form>
       </section>
+
+      <!-- 截图放大预览：点击左侧图片打开，Esc / 点空白处 / 右上角关闭。 -->
+      <div v-if="previewZoomed" class="fd-zoom" @click="closePreviewZoom">
+        <div class="fd-zoom-stage">
+          <img
+            :src="previewSource"
+            alt="截图放大预览"
+            :style="zoomImageStyle"
+            @load="handleZoomImageLoad"
+          />
+        </div>
+        <button
+          type="button"
+          class="fd-zoom-close"
+          aria-label="关闭放大预览"
+          @click.stop="closePreviewZoom"
+        >
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+            <path d="M6 6l12 12M18 6L6 18" />
+          </svg>
+        </button>
+        <span class="fd-zoom-tip">点击任意处或按 Esc 关闭</span>
+      </div>
     </div>
   </Teleport>
 </template>
@@ -417,6 +621,7 @@ onBeforeUnmount(() => {
 }
 
 .fd-preview-frame {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -428,6 +633,34 @@ onBeforeUnmount(() => {
   background-color: var(--fd-sunken);
   background-image: radial-gradient(rgba(23, 24, 27, 0.045) 1px, transparent 1px);
   background-size: 12px 12px;
+}
+
+.fd-preview-frame.is-zoomable {
+  cursor: zoom-in;
+  transition:
+    border-color 160ms var(--fd-ease),
+    box-shadow 160ms var(--fd-ease);
+}
+
+.fd-preview-frame.is-zoomable:hover,
+.fd-preview-frame.is-zoomable:focus-visible {
+  outline: none;
+  border-color: var(--fd-signal);
+  box-shadow: 0 0 0 2px var(--fd-signal-soft);
+}
+
+/* 右下角的放大提示：让用户知道这张缩略图能点开。 */
+.fd-preview-zoom {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(23, 24, 27, 0.62);
+  color: #fffdf9;
+  font-size: 9.5px;
+  letter-spacing: 0.02em;
+  pointer-events: none;
 }
 
 .fd-preview-frame img {
@@ -452,6 +685,75 @@ onBeforeUnmount(() => {
   color: var(--fd-ink-4);
   font-size: 11px;
   text-align: center;
+}
+
+/* ------------------------------------------------------------
+   截图放大预览
+   ------------------------------------------------------------ */
+.fd-zoom {
+  position: fixed;
+  inset: 0;
+  z-index: 160;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28px;
+  background: rgba(12, 14, 17, 0.82);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  cursor: zoom-out;
+  animation: fd-fade 140ms var(--fd-ease) both;
+}
+
+.fd-zoom-stage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  max-width: 94vw;
+  max-height: 88vh;
+}
+
+.fd-zoom img {
+  display: block;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 30px 80px -30px rgba(0, 0, 0, 0.72);
+  cursor: zoom-out;
+}
+
+.fd-zoom-close {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid rgba(255, 253, 249, 0.28);
+  border-radius: 50%;
+  background: rgba(255, 253, 249, 0.12);
+  color: #fffdf9;
+  cursor: pointer;
+  transition:
+    background-color 160ms var(--fd-ease),
+    border-color 160ms var(--fd-ease);
+}
+
+.fd-zoom-close:hover {
+  border-color: rgba(255, 253, 249, 0.55);
+  background: rgba(255, 253, 249, 0.22);
+}
+
+.fd-zoom-tip {
+  position: absolute;
+  left: 50%;
+  bottom: 22px;
+  transform: translateX(-50%);
+  color: rgba(255, 253, 249, 0.72);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  pointer-events: none;
 }
 
 .fd-preview-meta {
@@ -575,6 +877,73 @@ onBeforeUnmount(() => {
 .fd-field input:disabled,
 .fd-field textarea:disabled {
   opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* 标题自动识别的状态行：弱提示 + 两个文字按钮，不抢表单主体的注意力。 */
+.fd-ocr {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin-top: -2px;
+  padding-left: 1px;
+  min-height: 16px;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--fd-ink-3);
+}
+
+.fd-ocr-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.fd-ocr-state.is-loading {
+  color: var(--fd-ink-2);
+}
+
+.fd-ocr-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--fd-signal);
+  animation: fd-ocr-pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes fd-ocr-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.fd-ocr-action {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--fd-signal-ink);
+  font-family: inherit;
+  font-size: 10.5px;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.fd-ocr-action:hover:not(:disabled) {
+  color: var(--fd-signal);
+}
+
+.fd-ocr-action:disabled {
+  opacity: 0.5;
   cursor: not-allowed;
 }
 

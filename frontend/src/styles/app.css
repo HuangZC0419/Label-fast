@@ -1240,11 +1240,6 @@ select.input {
   font-size: .8125rem;
   color: var(--text-secondary);
 }
-.user-info .username {
-  font-weight: 600;
-  color: var(--text);
-  font-size: .8125rem;
-}
 .user-info .logout-btn {
   background: none;
   border: 1px solid var(--border);
@@ -1503,28 +1498,6 @@ select.input {
   text-overflow: ellipsis;
 }
 
-.header-user-avatar {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--primary-bg);
-  border: 1px solid var(--primary-lighter);
-  color: var(--primary);
-  font-size: .75rem;
-  font-weight: 700;
-  flex-shrink: 0;
-}
-
-.app-header .username {
-  max-width: 160px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 /* ============================================================
    Vue 占位视图
    ============================================================ */
@@ -1628,7 +1601,6 @@ select.input {
   .app-header { padding: 0 1rem; }
   .header-brand-name,
   .header-separator { display: none; }
-  .app-header .username { max-width: 96px; }
   .placeholder-view { padding: 1.25rem; }
   .placeholder-card { padding: 2rem 1.25rem; }
 }
@@ -2148,41 +2120,6 @@ select.input {
 
 .user-info {
   gap: 10px;
-}
-
-.header-user {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 4px 12px 4px 4px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, .55);
-  box-shadow: var(--shadow-xs);
-}
-
-.header-user-avatar {
-  width: 36px;
-  height: 36px;
-  border: none;
-  border-radius: 11px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  background: var(--ink);
-  color: var(--paper);
-  font-family: var(--font-display);
-  font-size: 17px;
-  font-weight: 400;
-  line-height: 1;
-}
-
-.app-header .username {
-  max-width: 160px;
-  color: var(--ink-2);
-  font-size: 13px;
-  font-weight: 600;
 }
 
 .app-header .logout-btn {
@@ -2984,14 +2921,6 @@ select.input {
   }
 
   .header-module-eyebrow {
-    display: none;
-  }
-
-  .header-user {
-    padding: 3px;
-  }
-
-  .header-user .username {
     display: none;
   }
 

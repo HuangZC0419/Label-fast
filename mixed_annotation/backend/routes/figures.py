@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, File, Form, Response, UploadFile, status
+from fastapi import APIRouter, File, Form, HTTPException, Response, UploadFile, status
 from pydantic import ValidationError
 
 from config import MAX_FIGURE_BYTES
 from errors import BadRequestError
 from schemas import FigureCreate, FigurePatch
-from services import block_service
+from services import block_service, caption_service, ocr_client
+from services.ocr_client import OcrWorkerError
 from storage import add_figure, delete_figure, get_file, update_figure
 
 router = APIRouter(prefix="/api/files", tags=["figures"])
@@ -113,6 +114,32 @@ async def create_figure(
 
     figure = add_figure(file_id, payload.model_dump(), content)
     return figure
+
+
+@router.post("/{file_id}/figure-caption-ocr")
+async def figure_caption_ocr(file_id: str, file: UploadFile = File(...)) -> dict:
+    """对刚框选的截图做小图 OCR，返回建议标题（图 3 XXXX / 表 2 XXXX）。
+
+    失败不阻塞创建流程：前端会把错误降级成“请手动填写”。
+    """
+
+    try:
+        content = await file.read(MAX_FIGURE_BYTES + 1)
+    finally:
+        await file.close()
+
+    validate_png_upload(content)
+    get_file(file_id)
+
+    try:
+        payload = await ocr_client.recognize_region(content)
+    except OcrWorkerError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"自动识别不可用：{exc}",
+        ) from exc
+
+    return caption_service.build_caption_result(payload)
 
 
 @router.patch("/{file_id}/figures/{figure_id}")

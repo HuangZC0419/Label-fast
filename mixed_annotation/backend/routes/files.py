@@ -260,6 +260,9 @@ async def reconvert_file(
         else options.enable_formula
     )
     dpi = int(meta.get("dpi", DEFAULT_DPI) if options.dpi is None else options.dpi)
+    parse_method = str(
+        options.parse_method or meta.get("parse_method") or "auto"
+    ).strip().lower() or "auto"
     extension = f".{meta.get('source_ext', '')}"
     media_type = ALLOWED_UPLOADS.get(extension, ("image", "application/octet-stream"))[1]
 
@@ -268,6 +271,7 @@ async def reconvert_file(
         enable_table=bool(enable_table),
         enable_formula=bool(enable_formula),
         dpi=dpi,
+        parse_method=parse_method,
         reset_results=True,
         filename=meta["source_filename"],
         content_type=media_type,

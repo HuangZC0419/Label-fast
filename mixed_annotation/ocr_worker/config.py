@@ -98,6 +98,8 @@ MINERU_API_HEALTH_TIMEOUT_SECONDS = float(
 OCR_WORKER_CONCURRENCY = int(os.getenv("OCR_WORKER_CONCURRENCY", "0"))
 
 MAX_UPLOAD_BYTES = int(os.getenv("OCR_MAX_UPLOAD_MB", "100")) * 1024 * 1024
+# 图表截图的小图 OCR：只接收弹窗里的区域截图，体积远小于整份文档。
+MAX_REGION_OCR_BYTES = int(os.getenv("OCR_REGION_MAX_MB", "8")) * 1024 * 1024
 TASK_RETENTION_SECONDS = int(
     os.getenv("OCR_TASK_RETENTION_SECONDS", str(24 * 60 * 60))
 )

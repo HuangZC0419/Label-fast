@@ -21,6 +21,7 @@ import {
   updateFigure,
 } from '../../api/client'
 import { normalizeBlocks } from '../../utils/blocks'
+import { looksLikeGarbledMarkdown } from '../../utils/textQuality'
 import FigureDialog from './FigureDialog.vue'
 import MarkdownAnnotator from './MarkdownAnnotator.vue'
 import MarkdownEditor from './MarkdownEditor.vue'
@@ -53,6 +54,10 @@ interface AnnotatorApi {
 interface PdfPreviewApi {
   /** bbox 为目标页坐标，page 为 1 基页码；图片模式固定传 1。 */
   captureRegion: (bbox: number[], page: number) => Promise<Blob>
+  /** 进入截图模式；资源未就绪时会排队，等预览加载完成后自动进入。 */
+  startCapture: () => void
+  /** 进入/退出图片、表格标注模式，供 F3 快捷键调用。 */
+  toggleCaptureMode: () => void
   setScrollRatio: (ratio: number) => void
   getScrollRatio: () => number
 }
@@ -81,11 +86,17 @@ const props = defineProps<{
   file: MixedFile | null
   labels: string[]
   relationTypes: string[]
+  /** 项目级自定义快捷键覆盖项；透传给标注画布，决定 chip 徽标与实际按键。 */
+  shortcuts: Record<string, string>
 }>()
 
 const emit = defineEmits<{
   saved: []
   refresh: []
+  /** 标注工具条的「快捷键」按钮：向上透传到视图层打开快捷键弹窗。 */
+  'edit-shortcuts': []
+  /** 疑似乱码：请求视图层用 OCR 重新转换当前文件。 */
+  reconvert: []
 }>()
 
 const mode = ref<WorkspaceMode>('annotate')
@@ -138,6 +149,20 @@ const modeSwitching = ref(false)
 
 const markdownSource = ref('')
 const editorDraft = ref('')
+/**
+ * 当前 Markdown 是否像乱码（老 PDF 文本层编码异常，直接提取出来是符号串）。
+ * 命中时在顶部提示用户可「重新 OCR 转换」，不做自动操作。
+ */
+const markdownLooksGarbled = computed(() =>
+  looksLikeGarbledMarkdown(markdownSource.value),
+)
+const garbledBannerDismissed = ref(false)
+watch(
+  () => props.file?.id,
+  () => {
+    garbledBannerDismissed.value = false
+  },
+)
 const blocks = ref<BlockInfo[]>([])
 const annotationRecord = ref<AnnotationRecord | null>(null)
 /**
@@ -169,6 +194,22 @@ const modeToggleDisabled = computed(
     modeSwitching.value,
 )
 const pdfAsDrawer = computed(() => isNarrow.value)
+/**
+ * 标注工具栏（实体标签 / 关系类型 / 状态条）的整宽挂载点是否可见。
+ *
+ * 用 v-show 而不是 v-if：MarkdownAnnotator 通过 <Teleport to="#mw-annotation-bar">
+ * 把工具区传送进来，目标节点必须始终存在，否则首次挂载会找不到宿主。
+ * 只有在“已完成文件 + 文档就绪 + 无加载错误 + 标注模式”下才显示，
+ * 编辑模式下工具栏必须彻底让位（不残留空条）。
+ */
+const annotationBarVisible = computed(
+  () =>
+    Boolean(props.file) &&
+    props.file?.status === 'completed' &&
+    documentReady.value &&
+    !loadError.value &&
+    mode.value === 'annotate',
+)
 
 /* ============================================================
    同步滚动（Markdown ↔ PDF）
@@ -233,6 +274,21 @@ const progressPercent = computed(() => {
 const previewLabel = computed(() =>
   props.file?.source_type === 'pdf' ? 'PDF 预览' : '原图预览',
 )
+/** 状态点的可读文案：中文短标签，用于 title 与模块头里的状态文字。 */
+const fileStatusText = computed(() => {
+  switch (props.file?.status) {
+    case 'completed':
+      return '已完成'
+    case 'converting':
+      return '转换中'
+    case 'failed':
+      return '转换失败'
+    case 'uploaded':
+      return '排队中'
+    default:
+      return ''
+  }
+})
 const statusHeading = computed(() => {
   if (!props.file) return ''
   if (props.file.status === 'failed') return '转换失败'
@@ -1254,6 +1310,10 @@ function refreshStatus(): void {
 }
 
 function handleGlobalKeydown(event: KeyboardEvent): void {
+  if (event.key === 'F3' && !event.repeat) {
+    handleCaptureShortcut(event)
+    return
+  }
   if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 's') return
   if (
     event.defaultPrevented ||
@@ -1265,6 +1325,63 @@ function handleGlobalKeydown(event: KeyboardEvent): void {
   }
   event.preventDefault()
   handlePrimarySave()
+}
+
+function isEditableShortcutTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  return (
+    target.tagName === 'INPUT' ||
+    target.tagName === 'TEXTAREA' ||
+    target.tagName === 'SELECT' ||
+    target.isContentEditable
+  )
+}
+
+/**
+ * 是否有「真正可见」的弹窗。
+ *
+ * 不能直接用 querySelector 判断：混合标注的导入弹窗等组件是常驻挂载的，
+ * 关闭时只是外层 display:none，DOM 里仍然存在 role="dialog"，
+ * 直接判断会让 F3 永远被当成“弹窗打开中”而失效。
+ * 用 getClientRects().length 判断真实可见性（display:none 时为 0）。
+ */
+function hasVisibleModal(): boolean {
+  const modals = document.querySelectorAll<HTMLElement>(
+    '[role="dialog"], [role="alertdialog"]',
+  )
+  return Array.from(modals).some((modal) => modal.getClientRects().length > 0)
+}
+
+/**
+ * F3：图片／表格标注的固定快捷键，和右侧预览面板里的按钮是同一个动作。
+ *
+ * - 预览面板关着时先打开它，再排队进入截图模式（资源未就绪会在加载完成后自动进入）；
+ * - 已经在截图模式时按 F3 退出；
+ * - 输入框内、图表弹窗/编辑确认弹窗打开时不抢按键。
+ *
+ * 不用 F1：浏览器会先用 F1 打开帮助页，页面层拦不住。
+ */
+function handleCaptureShortcut(event: KeyboardEvent): void {
+  if (event.defaultPrevented) return
+  if (!props.file || props.file.status !== 'completed' || !documentReady.value) return
+
+  // 文档已就绪时一律吞掉 F3，避免浏览器打开页面查找；
+  // 输入框、弹窗、编辑模式下只是不执行截图动作。
+  event.preventDefault()
+  if (isEditableShortcutTarget(event.target)) return
+  if (hasVisibleModal()) return
+  if (mode.value !== 'annotate' || figureDialog.value || editConsentOpen.value) return
+
+  if (!pdfOpen.value) {
+    pdfOpen.value = true
+    void nextTick().then(() => {
+      if (!pdfOpen.value) return
+      // 预览刚挂载，资源可能仍在加载；startCapture 会把请求排队到 canCapture 之后。
+      pdfPreviewRef.value?.startCapture()
+    })
+    return
+  }
+  pdfPreviewRef.value?.toggleCaptureMode()
 }
 
 /** 页面隐藏/关闭前尽力落盘；刷新时若仍有未保存内容则提示用户。 */
@@ -1323,68 +1440,70 @@ defineExpose({
     :class="{ 'is-resizing': resizingPdf }"
     aria-label="混合标注工作区"
   >
-    <header class="mw-toolbar">
-      <div class="mw-identity">
-        <div class="mw-eyebrow">
-          <span class="mw-project" :title="project?.name ?? '未选择项目'">
-            {{ project?.name || '未选择项目' }}
-          </span>
-          <span class="mw-slash" aria-hidden="true">/</span>
-          <span>Mixed Annotation</span>
+    <!--
+      文件头传送进模块头（AppHeader 的 workspace 插槽），与项目切换器、导出按钮同一行，
+      省掉原来的独立工具栏行。无文件时不传送，避免模块头出现空占位。
+    -->
+    <Teleport v-if="file" to="#mw-toolbar-slot">
+      <header class="mw-toolbar">
+        <div class="mw-identity">
+          <div class="mw-title-row">
+            <h1 class="mw-title" :title="file.name">
+              {{ file.name }}
+            </h1>
+            <span
+              class="mw-status-dot"
+              :class="`is-${file.status}`"
+              :title="fileStatusText"
+              aria-hidden="true"
+            ></span>
+            <span class="mw-status-text">{{ fileStatusText }}</span>
+            <span v-if="savedNotice" class="mw-saved-pill" role="status" aria-live="polite">
+              {{ savedNotice }}
+            </span>
+          </div>
         </div>
-        <div class="mw-title-row">
-          <h1 class="mw-title" :title="file?.name">
-            {{ file?.name || '混合标注' }}
-          </h1>
-          <span
-            v-if="file"
-            class="mw-status-dot"
-            :class="`is-${file.status}`"
-            :title="file.status"
-            aria-hidden="true"
-          ></span>
-          <span v-if="savedNotice" class="mw-saved-pill" role="status" aria-live="polite">
-            {{ savedNotice }}
-          </span>
-        </div>
-      </div>
 
-      <div class="mw-actions">
-        <div class="mw-controls" role="group" aria-label="工作区控制">
-          <ModeToggle
-            :mode="mode"
-            :disabled="modeToggleDisabled"
-            @toggle="toggleMode"
-          />
-          <button
-            type="button"
-            class="mw-control"
-            :class="{ 'is-toggle-active': pdfOpen }"
-            :aria-pressed="pdfOpen"
-            :disabled="!completed || !documentReady"
-            title="显示 / 隐藏原始文件预览"
-            @click="togglePdf"
-          >
-            <span class="mw-control-dot" aria-hidden="true" />
-            {{ previewLabel }}
-          </button>
-          <button
-            type="button"
-            class="mw-control"
-            :class="{ 'is-toggle-active': syncScroll && file?.source_type === 'pdf' }"
-            :aria-pressed="syncScroll && file?.source_type === 'pdf'"
-            :disabled="!completed || !documentReady || file?.source_type !== 'pdf'"
-            title="Markdown 与 PDF 同步上下滚动（仅 PDF）"
-            @click="toggleSyncScroll"
-          >
-            <span class="mw-control-dot" aria-hidden="true" />
-            同步滚动
-          </button>
+        <div class="mw-actions">
+          <div class="mw-controls" role="group" aria-label="工作区控制">
+            <ModeToggle
+              :mode="mode"
+              :disabled="modeToggleDisabled"
+              @toggle="toggleMode"
+            />
+            <button
+              type="button"
+              class="mw-control"
+              :class="{ 'is-toggle-active': pdfOpen }"
+              :aria-pressed="pdfOpen"
+              :disabled="!completed || !documentReady"
+              title="显示 / 隐藏原始文件预览"
+              @click="togglePdf"
+            >
+              <span class="mw-control-dot" aria-hidden="true" />
+              {{ previewLabel }}
+            </button>
+            <button
+              type="button"
+              class="mw-control"
+              :class="{ 'is-toggle-active': syncScroll && file.source_type === 'pdf' }"
+              :aria-pressed="syncScroll && file.source_type === 'pdf'"
+              :disabled="!completed || !documentReady || file.source_type !== 'pdf'"
+              title="Markdown 与 PDF 同步上下滚动（仅 PDF）"
+              @click="toggleSyncScroll"
+            >
+              <span class="mw-control-dot" aria-hidden="true" />
+              同步滚动
+            </button>
+          </div>
         </div>
-      </div>
-    </header>
+      </header>
+    </Teleport>
 
-    <div v-if="actionError || loadWarning" class="mw-banners">
+    <div
+      v-if="actionError || loadWarning || (markdownLooksGarbled && !garbledBannerDismissed)"
+      class="mw-banners"
+    >
       <div v-if="actionError" class="mw-banner mw-banner--error" role="alert">
         <span>{{ actionError }}</span>
         <button type="button" class="mw-banner-close" aria-label="关闭错误提示" @click="actionError = ''">
@@ -1397,7 +1516,43 @@ defineExpose({
           ×
         </button>
       </div>
+      <!--
+        老国标 PDF 常见：字体编码没有 ToUnicode 映射，文本层直接提取出来是符号串。
+        这里只提示并给一键重新转换入口，避免用户误以为是前端渲染问题。
+      -->
+      <div
+        v-if="markdownLooksGarbled && !garbledBannerDismissed"
+        class="mw-banner mw-banner--warning"
+        role="status"
+      >
+        <span>
+          该文件的 Markdown 疑似乱码：原 PDF 的文字层编码异常，直接提取得到的是符号串。
+          可以改用 OCR 重新识别（会清空实体/关系标注和图表记录）。
+        </span>
+        <button
+          type="button"
+          class="mw-banner-action"
+          @click="emit('reconvert')"
+        >
+          重新 OCR 转换
+        </button>
+        <button
+          type="button"
+          class="mw-banner-close"
+          aria-label="关闭提示"
+          @click="garbledBannerDismissed = true"
+        >
+          ×
+        </button>
+      </div>
     </div>
+
+    <!--
+      标注工具栏的整宽挂载点：由 MarkdownAnnotator 用 Teleport 注入实体标签/关系类型/状态条。
+      放在工作区顶部、横跨文本与 PDF，使下面两栏从同一高度开始；
+      用 v-show 保留 DOM，保证 Teleport 目标始终可解析。
+    -->
+    <div id="mw-annotation-bar" class="mw-annotation-bar" v-show="annotationBarVisible"></div>
 
     <div v-if="!file" class="mw-empty">
       <span class="mw-empty-glyph" aria-hidden="true">
@@ -1479,10 +1634,12 @@ defineExpose({
               :blocks="blocks"
               :labels="labels"
               :relation-types="relationTypes"
+              :shortcuts="shortcuts"
               :annotations="annotationRecord"
               :active="mode === 'annotate'"
               @scroll-state="handleMarkdownScroll"
               @change="handleAnnotationChange"
+              @edit-shortcuts="emit('edit-shortcuts')"
             >
               <template #save-status>
                 <SaveStatus :state="saveState" :error="saveError" />
@@ -1626,74 +1783,52 @@ defineExpose({
 }
 
 /* ------------------------------------------------------------
-   工具栏
+   文件头（Teleport 到模块头的 workspace 插槽）
    ------------------------------------------------------------ */
+/*
+ * 这里不再是独立一行：整块被传送到 .mx-header 内，与项目切换器、导出按钮同行，
+ * 因此去掉边框、底色与内边距，只保留「左标题 + 右控件」的单行排布。
+ * 主题变量由插槽容器（.mx-workspace-slot）提供，避免离开 .mixed-workspace 后丢色。
+ */
 .mw-toolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  flex-wrap: wrap;
-  flex-shrink: 0;
-  min-height: 66px;
-  padding: 11px 20px;
-  border-bottom: 1px solid var(--mw-line);
-  /* Chrome 109 不支持 color-mix，保留暖纸底色作为回退。 */
-  background: var(--mw-paper);
-  background: color-mix(in srgb, var(--mw-paper) 90%, transparent);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  animation: mw-fade 260ms var(--mw-ease) both;
+  justify-content: flex-start;
+  gap: 10px;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  height: auto;
+  padding: 0;
+  border-bottom: none;
+  background: transparent;
+  animation: mw-fade 220ms var(--mw-ease) both;
 }
 
 .mw-identity {
   display: flex;
-  flex-direction: column;
-  gap: 3px;
+  align-items: center;
   min-width: 0;
-}
-
-.mw-eyebrow {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  min-width: 0;
-  overflow: hidden;
-  font-family: var(--mw-mono);
-  font-size: 9px;
-  font-weight: 500;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--mw-ink-3);
-  white-space: nowrap;
-}
-
-.mw-project {
-  max-width: 220px;
-  overflow: hidden;
-  color: var(--mw-signal-deep);
-  text-overflow: ellipsis;
-}
-
-.mw-slash {
-  color: var(--mw-line-strong);
+  flex: 0 1 auto;
 }
 
 .mw-title-row {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 7px;
   min-width: 0;
 }
 
+/* 文件名是这一行里唯一的“标题”，15px 单行省略，避免把控件挤出模块头。 */
 .mw-title {
   margin: 0;
+  max-width: 260px;
   overflow: hidden;
-  font-family: var(--mw-display);
-  font-size: clamp(20px, 1.9vw, 26px);
-  font-weight: 400;
-  line-height: 1.14;
-  letter-spacing: -0.012em;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0.005em;
   color: var(--mw-ink);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1722,6 +1857,15 @@ defineExpose({
   background: var(--mw-danger);
 }
 
+/* 状态文字是辅助信息，窄屏优先让位给文件名与控件。 */
+.mw-status-text {
+  flex-shrink: 0;
+  font-size: 10.5px;
+  letter-spacing: 0.02em;
+  color: var(--mw-ink-3);
+  white-space: nowrap;
+}
+
 .mw-saved-pill {
   display: inline-flex;
   align-items: center;
@@ -1735,30 +1879,33 @@ defineExpose({
   animation: mw-fade 180ms var(--mw-ease) both;
 }
 
+/* 控件整体靠右：标题与控件之间由 margin-left 撑开，而不是把标题拉开。 */
 .mw-actions {
   display: flex;
   align-items: center;
   gap: 7px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 /* 视图控制项共用一套尺寸与状态色：
-   开关开启 = 朱砂浅底；未激活 = 白底细边。 */
+   开关开启 = 朱砂浅底；未激活 = 白底细边。模块头里统一压到 30px 高。 */
 .mw-controls {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 
 .mw-control {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 32px;
-  padding: 0 11px;
+  height: 30px;
+  padding: 0 9px;
   border: 1px solid var(--mw-line);
-  border-radius: 9px;
+  border-radius: 8px;
   background: var(--mw-surface);
   color: var(--mw-ink-2);
   font-family: inherit;
@@ -1771,6 +1918,22 @@ defineExpose({
     background-color 180ms var(--mw-ease),
     border-color 180ms var(--mw-ease),
     color 180ms var(--mw-ease);
+}
+
+/* 模式切换跟随模块头高度收缩：只压视觉尺寸，不改 ModeToggle 的业务逻辑。 */
+.mw-controls :deep(.mode-switch) {
+  height: 30px;
+  padding: 2px;
+  border-radius: 8px;
+}
+
+.mw-controls :deep(.mode-switch-track) {
+  height: 24px;
+}
+
+.mw-controls :deep(.mode-switch-label) {
+  padding: 0 7px;
+  font-size: 11px;
 }
 
 .mw-control:hover:not(:disabled) {
@@ -1847,6 +2010,45 @@ defineExpose({
 }
 
 /* ------------------------------------------------------------
+   标注工具栏（整宽顶栏挂载点）
+   ------------------------------------------------------------ */
+/*
+ * MarkdownAnnotator 的工具区通过 Teleport 传送到这里，DOM 上已经脱离了
+ * .markdown-annotator，因此必须在这里补齐同一组 --lf-* 主题变量，
+ * 否则卡片会丢失颜色/字体/边框。左右内边距与 .mw-body 对齐（16px），
+ * 文本列与 PDF 列因此从同一高度开始，不再需要给 PDF 额外加顶部间距。
+ */
+.mw-annotation-bar {
+  --lf-paper: var(--paper, #f6f3ec);
+  --lf-paper-deep: var(--paper-deep, #efebe2);
+  --lf-surface: var(--surface, #fffdf9);
+  --lf-raised: var(--surface-raised, #fff);
+  --lf-sunken: var(--surface-sunken, #f2eee6);
+  --lf-ink: var(--ink, #17181b);
+  --lf-ink-2: var(--ink-2, #3e4147);
+  --lf-ink-3: var(--ink-3, #6e727a);
+  --lf-ink-4: var(--ink-4, #9a9da3);
+  --lf-line: var(--line, #e2dccf);
+  --lf-line-strong: var(--line-strong, #d2caba);
+  --lf-signal: var(--signal, #e4572e);
+  --lf-signal-deep: var(--signal-deep, #c44722);
+  --lf-signal-soft: var(--signal-soft, #fbe8e1);
+  --lf-signal-ink: var(--signal-ink, #8e2f14);
+  --lf-success: var(--success, #2f7d5b);
+  --lf-danger: var(--danger, #b5403a);
+  --lf-mono: var(--font-mono, 'Geist Mono', ui-monospace, Consolas, monospace);
+  --lf-display: var(--font-display, 'Instrument Serif', Georgia, serif);
+  --lf-ease: var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1));
+  --lf-shadow-xs: var(--shadow-xs, 0 1px 2px rgba(35, 29, 19, 0.05));
+  --lf-shadow: var(--shadow, 0 18px 44px -28px rgba(35, 29, 19, 0.22));
+
+  flex-shrink: 0;
+  min-width: 0;
+  /* 工具条上边距压到 8px：卡片内部再收紧，整条高度控制在约 100px。 */
+  padding: 8px 16px 0;
+}
+
+/* ------------------------------------------------------------
    提示条
    ------------------------------------------------------------ */
 .mw-banners {
@@ -1871,6 +2073,31 @@ defineExpose({
 .mw-banner > span {
   flex: 1;
   min-width: 0;
+}
+
+/* 提示条里的操作按钮：实心警示色，和「重新 OCR 转换」这类修复动作配对。 */
+.mw-banner-action {
+  flex-shrink: 0;
+  align-self: center;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid rgba(169, 118, 30, 0.45);
+  border-radius: 7px;
+  background: var(--mw-warning, #a9761e);
+  color: #fffdf9;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 160ms var(--mw-ease),
+    border-color 160ms var(--mw-ease);
+}
+
+.mw-banner-action:hover {
+  background: #8d6118;
+  border-color: #8d6118;
 }
 
 .mw-banner--error {
@@ -2326,19 +2553,54 @@ defineExpose({
   }
 }
 
+@media (max-width: 1280px) {
+  /* 1280px 以下先牺牲标题宽度与状态文字，保证控件不被挤掉。 */
+  .mw-title {
+    max-width: 190px;
+    font-size: 14.5px;
+  }
+
+  .mw-status-text {
+    display: none;
+  }
+}
+
+@media (max-width: 1100px) {
+  /* 1100px 以下模块头换行，文件头独占一行：进一步缩短标题、隐藏保存提示。 */
+  .mw-title {
+    max-width: 150px;
+  }
+
+  .mw-saved-pill {
+    display: none;
+  }
+}
+
 @media (max-width: 760px) {
+  /* 窄屏：标题占一行，控件另起一行，仍保持“标题在上、操作在下”的阅读顺序。 */
   .mw-toolbar {
-    align-items: flex-start;
-    padding: 10px 12px;
-    gap: 10px;
+    flex-wrap: wrap;
+    align-items: center;
+    padding: 0;
+    gap: 6px;
+  }
+
+  .mw-identity {
+    flex: 1 1 100%;
+  }
+
+  .mw-title {
+    max-width: 100%;
   }
 
   .mw-actions {
     width: 100%;
+    margin-left: 0;
   }
 
   .mw-controls {
     width: 100%;
+    flex-wrap: wrap;
   }
 
   .mw-control {
@@ -2358,6 +2620,11 @@ defineExpose({
 
   .mw-banners {
     padding: 7px 12px 0;
+  }
+
+  /* 窄屏与 .mw-body 的左右 8px 内边距保持一致。 */
+  .mw-annotation-bar {
+    padding: 8px 8px 0;
   }
 
   .mw-body {

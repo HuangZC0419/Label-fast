@@ -35,3 +35,9 @@ model_annotation/output/
 
 # IDE
 .trae/
+
+# Office 临时锁文件
+~$*.xlsx
+
+# 本地标准资料（体积大，不入库）
+国标收集/

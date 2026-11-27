@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 import engine as paddle_engine
+from garbled_text import looks_like_garbled_text
 from page_layout import assemble_pages
 
 logger = logging.getLogger(__name__)
@@ -244,6 +245,39 @@ def _requested_mode(engine_override: str | None) -> str:
     return mode if mode in {"auto", "mineru", "paddle"} else "auto"
 
 
+def pdf_text_layer_looks_garbled(source_path: Path, sample_pages: int = 3) -> bool:
+    """抽样读取 PDF 自带文本层，判断是否乱码；打不开/无文本都返回 False。
+
+    这样能在转换前就决定用 ``parse_method=ocr``，避免先产出一份乱码 Markdown。
+    """
+
+    try:
+        import fitz  # PyMuPDF
+    except ImportError:
+        logger.warning("缺少 PyMuPDF，跳过 PDF 文本层乱码检测")
+        return False
+
+    document = None
+    try:
+        document = fitz.open(str(source_path))
+        if document.needs_pass or document.is_encrypted:
+            return False
+        text = "".join(
+            document[index].get_text("text")
+            for index in range(min(sample_pages, document.page_count))
+        )
+        return looks_like_garbled_text(text)
+    except Exception:
+        logger.warning("PDF 文本层乱码检测失败：%s", source_path, exc_info=True)
+        return False
+    finally:
+        if document is not None:
+            try:
+                document.close()
+            except Exception:
+                logger.debug("关闭 PDF 失败", exc_info=True)
+
+
 def convert_document(
     source_path: Path,
     task_dir: Path,
@@ -253,6 +287,7 @@ def convert_document(
     dpi: int,
     progress: ProgressCallback | None = None,
     engine: str | None = None,
+    parse_method: str | None = None,
 ) -> ConversionResult:
     """转换 PDF 或图片，写出 ``out/result.md``、``out/pages.json``、
     ``out/images/`` 与 ``result.zip``。
@@ -276,11 +311,32 @@ def convert_document(
             "请使用 MinerU（OCR_ENGINE=mineru 或 auto）。"
         )
 
-    return mineru_engine.convert_with_mineru(
+    # PDF 文本层编码坏掉时（常见于老国标的非标准字体编码），MinerU 的
+    # parse_method=auto 会把乱码符号当成正文提取出来。这里先抽样检测，
+    # 命中就强制整页 OCR，避免产出不可用的 Markdown。
+    # auto/空 都视为“交给系统判断”；显式 ocr/txt 则尊重调用方选择。
+    method = (parse_method or "").strip().lower()
+    if method in {"", "auto"}:
+        method = None
+    warning = ""
+    if method is None and source_path.suffix.lower() == ".pdf":
+        if pdf_text_layer_looks_garbled(source_path):
+            method = "ocr"
+            warning = (
+                "检测到 PDF 文本层编码异常（直接提取得到符号串），已自动改用整页 OCR 重新识别"
+            )
+            logger.info("PDF 文本层疑似乱码，改用 OCR：%s", source_path)
+            report(1, "检测到文本层乱码，改用整页 OCR", None)
+
+    result = mineru_engine.convert_with_mineru(
         source_path,
         task_dir,
         enable_table=enable_table,
         enable_formula=enable_formula,
         dpi=dpi,
         progress=report,
+        parse_method=method,
     )
+    if warning:
+        result.warnings.append(warning)
+    return result

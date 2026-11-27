@@ -7,6 +7,13 @@ export interface Project {
   name: string
   labels: string[]
   relation_types: string[]
+  /**
+   * 项目级自定义快捷键覆盖项（`{标签名: 组合键}`）。
+   *
+   * 只保存用户显式设置过的项；未覆盖的标签沿用「前 9 个标签 → 数字 1–9」
+   * 的默认规则。老项目没有该字段，调用方一律按 `{}` 处理。
+   */
+  shortcuts?: Record<string, string>
   created_at: string
   updated_at: string
 }
@@ -131,10 +138,14 @@ export interface AnnotationRecord {
   updated_at?: string
 }
 
+export type ConversionParseMethod = 'auto' | 'txt' | 'ocr'
+
 export interface ConversionOptions {
   enable_table: boolean
   enable_formula: boolean
   dpi: number
+  /** auto：自动判断（坏文本层会自动 OCR）；txt：只用文本层；ocr：强制整页 OCR。 */
+  parse_method: ConversionParseMethod
 }
 
 /**
@@ -146,10 +157,70 @@ export interface ProjectSettingsPayload {
   options: ConversionOptions
 }
 
-/** 字典卡片的增量保存载荷：只提交发生变化的那一组。 */
+/**
+ * 字典卡片的增量保存载荷：只提交本次变化的值，由服务端做并集合并。
+ *
+ * 协作约定（与后端一致）：
+ * - 标签/关系只能通过 add / remove 变更，服务端不会因为缺少某项而隐式删除；
+ * - 同一值不得同时出现在 add 与 remove 中，调用方按“最后一次用户操作”保证互斥；
+ * - 删除仍被标注引用的标签时，服务端返回 409，需用户确认后带 `force: true` 重发。
+ */
 export interface ProjectDictionaryPatch {
-  labels?: string[]
-  relation_types?: string[]
+  labels_add?: string[]
+  labels_remove?: string[]
+  relation_types_add?: string[]
+  relation_types_remove?: string[]
+  /** 用户已确认删除在用标签：允许服务端删除仍被标注引用的标签。 */
+  force?: boolean
+}
+
+/** 标签引用统计：`used` 为各标签被标注引用的条数，`missing` 为被引用但字典缺失的标签。 */
+export interface ProjectLabelUsage {
+  used: Record<string, number>
+  missing: string[]
+}
+
+/* ------------------------------------------------------------------ */
+/* 项目按文件序号区间拆分                                              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 拆分分组：文件序号以左侧文件列表顺序为基准（1 基，`uploading` 已在后端排除）。
+ * 行之间不允许重叠；未覆盖的文件留在源项目。
+ */
+export interface SplitGroup {
+  name: string
+  start: number
+  end: number
+}
+
+/** 单个新项目的结果：完整项目对象 + 实际移入的文件。 */
+export interface ProjectSplitResult {
+  project: Project
+  file_count: number
+  file_ids: string[]
+}
+
+/** `POST /api/projects/{id}/split` 的响应。 */
+export interface ProjectSplitResponse {
+  projects: ProjectSplitResult[]
+  source_project: Project
+}
+
+/* ------------------------------------------------------------------ */
+/* 项目级自定义快捷键                                                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 快捷键增量保存载荷（复用 `PATCH /api/projects/{id}`）。
+ *
+ * 与字典一致采用增量语义：
+ * - `shortcuts_set`：逐项覆盖，标签必须存在于当前项目字典；
+ * - `shortcuts_unset`：删除覆盖项，回落到默认（前 9 个标签）或「无快捷键」。
+ */
+export interface ProjectShortcutsPatch {
+  shortcuts_set?: Record<string, string>
+  shortcuts_unset?: string[]
 }
 
 /** 文件夹批量导入时的上传进度快照。 */

@@ -1,10 +1,14 @@
-"""项目 CRUD 路由。"""
+"""项目 CRUD 路由。
+
+路由层只做「请求参数 → 服务层调用」的翻译：字典合并、引用统计、缺失标签
+恢复等业务判定全部在 ``storage`` 内完成，路由不写任何合并逻辑。
+"""
 
 from __future__ import annotations
 
 from fastapi import APIRouter, Response, status
 
-from schemas import ProjectCreate, ProjectPatch
+from schemas import ProjectCreate, ProjectPatch, ProjectSplitRequest
 from serializers import serialize_file
 from storage import (
     create_project,
@@ -13,7 +17,10 @@ from storage import (
     has_annotations_for,
     list_files,
     list_projects,
-    update_project,
+    project_label_usage_report,
+    restore_missing_labels,
+    split_project,
+    update_project_dictionary,
 )
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
@@ -44,8 +51,56 @@ def get_project_detail(project_id: str) -> dict:
 
 @router.patch("/{project_id}")
 def patch_project(project_id: str, payload: ProjectPatch) -> dict:
-    changes = payload.model_dump(exclude_unset=True)
-    return update_project(project_id, changes)
+    """增量更新项目：字典只增不减，删除必须显式声明且可能返回 409。"""
+
+    # 旧字段 labels / relation_types 按追加项处理，这是对旧前端包的兜底：
+    # 即便它提交整份数组，也不会删掉其他标注员新增的标签。
+    return update_project_dictionary(
+        project_id,
+        name=payload.name,
+        labels_add=[*(payload.labels or []), *(payload.labels_add or [])],
+        labels_remove=payload.labels_remove or [],
+        relation_types_add=[
+            *(payload.relation_types or []),
+            *(payload.relation_types_add or []),
+        ],
+        relation_types_remove=payload.relation_types_remove or [],
+        shortcuts_set=payload.shortcuts_set or {},
+        shortcuts_unset=payload.shortcuts_unset or [],
+        force=payload.force,
+    )
+
+
+@router.post("/{project_id}/split")
+def post_project_split(project_id: str, payload: ProjectSplitRequest) -> dict:
+    """按文件序号区间把项目拆成多个新项目（文件移动，源项目保留）。
+
+    区间语义、文件顺序、继承与回滚全部在 ``storage.split_project`` 内完成；
+    这里只把 Pydantic 模型翻译成服务层认识的字典列表。
+    """
+
+    return split_project(
+        project_id,
+        [
+            {"name": group.name, "start": group.start, "end": group.end}
+            for group in payload.groups
+        ],
+    )
+
+
+@router.get("/{project_id}/labels/usage")
+def get_project_label_usage(project_id: str) -> dict:
+    """只读：实体/段落标签引用计数 + 被引用但字典缺失的标签。"""
+
+    return project_label_usage_report(project_id)
+
+
+@router.post("/{project_id}/labels/restore")
+def post_project_labels_restore(project_id: str) -> dict:
+    """把被标注引用但字典缺失的标签全部补回字典（只增不减）。"""
+
+    result = restore_missing_labels(project_id)
+    return {**result["project"], "restored": result["restored"]}
 
 
 @router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)

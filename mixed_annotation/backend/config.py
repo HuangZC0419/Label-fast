@@ -27,6 +27,8 @@ OCR_CONNECT_TIMEOUT = float(os.getenv("OCR_CONNECT_TIMEOUT_SECONDS", "10"))
 OCR_STATUS_TIMEOUT = float(os.getenv("OCR_STATUS_TIMEOUT_SECONDS", "15"))
 OCR_SUBMIT_TIMEOUT = float(os.getenv("OCR_SUBMIT_TIMEOUT_SECONDS", "120"))
 OCR_DOWNLOAD_TIMEOUT = float(os.getenv("OCR_DOWNLOAD_TIMEOUT_SECONDS", "300"))
+# 图表小图 OCR（标题预填）：单张小图通常 1–2 秒，这里给足模型首次加载余量。
+OCR_REGION_TIMEOUT = float(os.getenv("OCR_REGION_TIMEOUT_SECONDS", "60"))
 # 队列在提交前探测 Worker /health，超时必须足够短，避免拖住夜间串行队列。
 OCR_HEALTH_TIMEOUT = float(os.getenv("OCR_HEALTH_TIMEOUT_SECONDS", "3"))
 OCR_TASK_TIMEOUT = float(os.getenv("OCR_TASK_TIMEOUT_SECONDS", str(6 * 60 * 60)))

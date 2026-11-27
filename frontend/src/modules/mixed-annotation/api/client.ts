@@ -186,6 +186,36 @@ export function figureAssetUrl(fileId: string, assetPath: string): string | null
   )
 }
 
+export interface CaptionOcrLine {
+  text: string
+  score: number
+}
+
+export interface CaptionOcrResult {
+  /** 建议标题（图 3 XXXX / 表 2 XXXX）；未识别到时为空串。 */
+  caption: string
+  /** 整张截图的 OCR 文本，便于用户核对。 */
+  text: string
+  lines: CaptionOcrLine[]
+}
+
+/**
+ * 对刚框选的截图做小图 OCR，自动建议图表标题。
+ *
+ * 属于“锦上添花”：失败时调用方只需降级为手动填写，不能阻塞创建流程。
+ */
+export async function recognizeFigureCaption(
+  fileId: string,
+  blob: Blob,
+): Promise<CaptionOcrResult> {
+  const form = new FormData()
+  form.append('file', blob, 'figure-region.png')
+  return apiFetch<CaptionOcrResult>(
+    `/api/files/${encodeURIComponent(fileId)}/figure-caption-ocr`,
+    { method: 'POST', body: form },
+  )
+}
+
 /** 创建图表：multipart 上传 PNG + JSON 元数据，返回服务端生成的完整记录。 */
 export async function createFigure(
   fileId: string,
@@ -283,6 +313,95 @@ export async function downloadProjectZip(projectId: string, projectName: string)
     const link = document.createElement('a')
     link.href = objectUrl
     link.download = `${sanitizeFileName(projectName)}.zip`
+    link.rel = 'noopener'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+  } finally {
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
+  }
+}
+
+/** 两位补零，仅用于文件名时间戳。 */
+function pad2(value: number): string {
+  return value < 10 ? `0${value}` : String(value)
+}
+
+/**
+ * 生成本地时间戳 `yyyyMMdd_HHmmss`。
+ * 刻意不引入日期库：这里只需要一个稳定、可排序、无时区歧义的文件名片段。
+ */
+function timestampForFileName(date = new Date()): string {
+  const ymd = `${date.getFullYear()}${pad2(date.getMonth() + 1)}${pad2(date.getDate())}`
+  const hms = `${pad2(date.getHours())}${pad2(date.getMinutes())}${pad2(date.getSeconds())}`
+  return `${ymd}_${hms}`
+}
+
+/**
+ * 从 Content-Disposition 中解析文件名（可选增强）。
+ * 后端可能返回 `filename*=UTF-8''%E6%B7%B7...xlsx` 或 `filename="..."`；
+ * 解析失败时返回 null，由调用方回退到本地生成的文件名。
+ */
+function filenameFromDisposition(header: string | null): string | null {
+  if (!header) return null
+
+  // RFC 5987 编码形式优先：它能正确表达中文文件名。
+  const extended = /filename\*=UTF-8''([^;]+)/i.exec(header)
+  if (extended) {
+    try {
+      const decoded = decodeURIComponent(extended[1].trim())
+      return decoded || null
+    } catch {
+      // 非法百分号编码：继续尝试普通 filename。
+    }
+  }
+
+  const plain = /filename="?([^";]+)"?/i.exec(header)
+  if (!plain) return null
+  const name = plain[1].trim()
+  return name || null
+}
+
+/**
+ * 下载所选项目的标注明细 Excel；文件名带时间戳，避免多次导出互相覆盖。
+ *
+ * 与 `downloadProjectZip` 保持同一套清理方式：blob → objectURL → 临时 `<a>` → 延迟 revoke。
+ * 不使用 `apiFetch`，因为它按 JSON 解析响应体。
+ */
+export async function downloadProjectExcel(projectIds: string[]): Promise<void> {
+  // UI 会在未选项目时禁用提交，这里再兜一层，避免发出必然 422 的请求。
+  const ids = Array.from(new Set(projectIds.filter((id) => Boolean(id))))
+  if (ids.length === 0) return
+
+  let response: Response
+  try {
+    response = await fetch(apiUrl('/projects/export-excel'), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept:
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/octet-stream',
+      },
+      body: JSON.stringify({ project_ids: ids }),
+    })
+  } catch (error) {
+    throw new ApiError(
+      '无法连接本地服务，导出失败。',
+      0,
+      error instanceof Error ? error.message : undefined,
+    )
+  }
+
+  if (!response.ok) throw await toApiError(response)
+
+  const blob = await response.blob()
+  const objectUrl = URL.createObjectURL(blob)
+  try {
+    const link = document.createElement('a')
+    link.href = objectUrl
+    link.download =
+      filenameFromDisposition(response.headers.get('content-disposition')) ??
+      `混合标注标注明细_${timestampForFileName()}.xlsx`
     link.rel = 'noopener'
     document.body.appendChild(link)
     link.click()

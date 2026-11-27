@@ -12,9 +12,178 @@
 | GET | `/api/projects` | 项目列表 |
 | POST | `/api/projects` | 创建项目：`{name, labels, relation_types}` |
 | GET | `/api/projects/{pid}` | 项目详情 + 文件列表 |
-| PATCH | `/api/projects/{pid}` | 更新名称/标签/关系类型 |
+| PATCH | `/api/projects/{pid}` | 增量更新名称/实体标签/关系类型（只增不减，见下） |
+| GET | `/api/projects/{pid}/labels/usage` | 实体/段落标签引用计数 + 字典缺失标签 |
+| POST | `/api/projects/{pid}/labels/restore` | 把被引用但字典缺失的标签补回字典 |
+| POST | `/api/projects/{pid}/split` | 按文件序号区间拆成多个新项目（文件移动，源项目保留） |
 | DELETE | `/api/projects/{pid}` | 删除项目及其数据 |
 | GET | `/api/projects/{pid}/export-zip` | 导出 ZIP：原始文件 + Markdown + 图表资产 + `annotations.jsonl` + `graph.jsonl` |
+
+#### 项目字典：增量合并（多人协同）
+
+背景：多人同时标注时，前端曾把整份 `labels` 数组覆盖写回，后保存者会抹掉别人
+新增的标签。现在 `PATCH /api/projects/{pid}` 对字典只做**增量合并**。
+
+请求体字段（全部可选）：
+
+```json
+{
+  "name": "可选：新项目名",
+  "labels": ["旧客户端兼容字段：只作为追加项"],
+  "relation_types": ["旧客户端兼容字段：只作为追加项"],
+  "labels_add": ["新增实体标签"],
+  "labels_remove": ["要删除的实体标签"],
+  "relation_types_add": ["新增关系类型"],
+  "relation_types_remove": ["要删除的关系类型"],
+  "shortcuts_set": { "适用范围": "q", "机械性能": "Ctrl+K" },
+  "shortcuts_unset": ["实验步骤"],
+  "force": false
+}
+```
+
+语义（服务端在同一把锁内完成，`project.json` 与 `projects.json` 各只写一次）：
+
+1. `labels` / `relation_types` **只作为追加项**，与现有字典求并集；即使旧前端
+   提交整份数组也不会删除任何已有条目。
+2. 真正删除只能通过 `labels_remove` / `relation_types_remove`；同一标签同时出现
+   在增删两侧时按「新增」处理（新增是非破坏性操作）。
+3. 删除仍被标注引用的**实体标签**时：`force=false` 返回 **409**，`detail` 带上
+   每个标签的引用条数；`force=true` 才允许删除。删除不修改任何标注数据。
+4. 合并顺序：保留现有顺序，新增项按传入顺序追加到末尾；去空白、去重、单条 ≤200 字
+   （超限返回 422）。
+5. `shortcuts_set` / `shortcuts_unset` 在同一把锁内先合并字典（含 `labels_add`）
+   再应用：标签必须存在于合并后的字典，否则 **400**；覆盖项规范化后存储；
+   有效快捷键（默认 1–9 + 覆盖项）冲突返回 **409**；`labels_remove` 会同步清理
+   被删标签的覆盖项。详见「项目级自定义快捷键」。
+6. 成功返回合并后的完整项目对象（含 `name` / `shortcuts` 更新）。
+
+409 示例（`detail` 为单行中文，含引用条数）：
+
+```
+标签「适用范围」6 处、「机械性能」3 处 仍被标注引用，删除后这些标注将失去标签。请先调整标注，或确认后强制删除。
+```
+
+`GET /api/projects/{pid}/labels/usage`（只读，不写盘）：
+
+```json
+{
+  "used": { "工艺参数": 9, "适用范围": 6, "机械性能": 3 },
+  "missing": ["工艺参数", "适用范围", "机械性能"]
+}
+```
+
+- `used`：项目内 `spans[].label` + `paragraphs[].label` 的引用计数，按引用数降序、
+  其次标签名排序；缺失/损坏的 `annotations.json` 跳过。
+- `missing`：`used` 中不在项目字典里的标签，排序规则同上。
+
+`POST /api/projects/{pid}/labels/restore`（只增不减，幂等）：
+
+```json
+{
+  "id": "uuid",
+  "name": "国标3",
+  "labels": ["已有标签", "工艺参数", "适用范围", "机械性能"],
+  "relation_types": ["包含"],
+  "created_at": "2026-11-10T07:47:00Z",
+  "updated_at": "2026-11-24T09:12:00Z",
+  "restored": ["工艺参数", "适用范围", "机械性能"]
+}
+```
+
+- 已有标签顺序不变，缺失标签按「引用数降序、其次标签名」追加到末尾；
+- 没有缺失标签时不写盘，返回 `restored: []`；
+- 响应在项目字段之外额外带 `restored`（本次补回的标签）。
+
+#### 项目拆分（按文件序号区间）
+
+`POST /api/projects/{pid}/split`
+
+```json
+{
+  "groups": [
+    { "name": "国标3-A", "start": 1, "end": 30 },
+    { "name": "国标3-B", "start": 31, "end": 50 }
+  ]
+}
+```
+
+响应（`project` 为完整项目对象，含 `labels` / `relation_types` / `shortcuts`）：
+
+```json
+{
+  "projects": [
+    {
+      "project": { "id": "uuid", "name": "国标3-A", "labels": ["适用范围"], "relation_types": ["包含"], "shortcuts": { "适用范围": "q" }, "created_at": "...", "updated_at": "..." },
+      "file_count": 30,
+      "file_ids": ["uuid", "..."]
+    }
+  ],
+  "source_project": { "id": "uuid", "name": "国标3", "labels": ["适用范围"], "relation_types": ["包含"], "shortcuts": { "适用范围": "q" }, "created_at": "...", "updated_at": "..." }
+}
+```
+
+语义：
+
+- **文件序号**以 `GET /api/projects/{pid}` 返回的 `files` 顺序为准（1 基、闭区间），
+  即 `created_at` 倒序、同一秒内 `queue_seq` 兜底；`status == "uploading"` 的记录
+  被排除（与详情接口一致），`uploaded` / `completed` / `failed` 均可移动；
+- 每组创建一个**新项目**，全量继承源项目的 `labels` / `relation_types` / `shortcuts`；
+- 文件以**移动**方式进入新项目：整个文件目录（source、markdown、assets、figures、
+  blocks、pages、`annotations.json`、`meta.json`）一起迁移，文件 `id` **不变**，
+  `meta.json` 的 `project_id` / `dir_name` / `updated_at` 同步更新，目标项目内
+  目录名冲突按既有 ` (2)` / ` (3)` 规则去重；
+- 源项目**保留**（不删除），只移走被分配的文件；源项目的字典与快捷键不被修改。
+  区间留空即「留在源项目」，全部拆走时源项目文件为空；
+- 全流程持有进程锁，**要么全成功要么全回滚**：任一步失败会把已移动文件移回源项目、
+  删除已创建的项目，再返回中文 `detail`；
+- 回滚边界：如果连「移回源项目」都失败（例如目录被其它进程占用），服务端**保留**
+  已创建的项目而不是删除目录，避免把用户文件一起删掉，此时 `detail` 会提示
+  「部分文件未能回滚……请手动检查后整理」，需要人工整理。
+
+错误码：
+
+| 状态码 | 场景 | `detail` 示例 |
+|---|---|---|
+| 400 | `groups` 为空 / 超过 50 组 | `拆分分组不能为空，请至少添加一组文件区间` |
+| 400 | 名称为空、超过 120 字、本次内重名 | `第 2 组的新项目名称「国标3-A」与本次提交的其他组重复` |
+| 400 | 序号越界或 `start > end` | `第 1 组（「国标3-A」）的文件序号必须在 1–50 之间，且起始序号不大于结束序号` |
+| 400 | 区间重叠（含端点相同） | `拆分区间重叠：「国标3-A」1–30 与 「国标3-B」30–50 存在交叉，请调整后重试` |
+| 404 | 项目不存在 / id 非 UUID | `项目不存在` |
+| 409 | 被选中文件正在转换 | `文件「GB 17945-2010.pdf」正在转换，移动会中断识别。请等待转换结束或取消转换后再拆分。` |
+| 500 | 移动/写盘失败（已回滚） | `移动文件「xxx.pdf」失败，请关闭占用该目录的程序后重试` / `拆分项目失败，已回滚全部改动，请稍后重试` |
+
+#### 项目级自定义快捷键
+
+`project.json`（以及所有返回项目的接口）包含 `shortcuts: {标签名: 组合键}`，
+**只保存用户显式设置过的覆盖项**；旧项目没有该字段时按 `{}` 返回。
+
+有效快捷键 = 默认规则「前 9 个标签 → 数字 1–9」+ 覆盖项（覆盖项优先）。
+快捷键是**项目级**的，项目之间完全独立。
+
+按键格式（服务端规范化后存储）：
+
+- 单键：`1`、`q`（单键字母统一小写）、`!`、`F2`；
+- 组合键：`Ctrl+K`、`Alt+Shift+P`（修饰键固定顺序 `Ctrl+Alt+Shift`，
+  组合键内字母按键显示为大写）；
+- `Ctrl` / `Control`、`Alt` / `Option`、`Shift` 大小写不敏感，修饰键顺序会被重排；
+- 别名同样接受：`esc` → `Escape`、`del` → `Delete`、`up` → `ArrowUp`、`pgdn` → `PageDown`；
+- 保留键不可设置（400）：`Escape`、`Delete`、`Backspace`、`Enter`、`Tab`、`Space`、
+  四个方向键、`Home`、`End`、`PageUp`、`PageDown`、`Ctrl+Z`、`Ctrl+S`、`Ctrl+1`…`Ctrl+9`。
+
+写入走 `PATCH /api/projects/{pid}`（增量，见上文）：
+
+```json
+{ "shortcuts_set": { "适用范围": "q", "机械性能": "Ctrl+K" }, "shortcuts_unset": ["实验步骤"] }
+```
+
+- 标签必须在**合并 `labels_add` 之后**的字典内，否则 **400**
+  （`标签「不存在」不存在，无法设置快捷键`）；
+- 规范化示例：`CTRL+k` → `Ctrl+K`、`shift+alt+p` → `Alt+Shift+P`、`P` → `p`、`f2` → `F2`；
+- 有效快捷键冲突 → **409**，`detail` 列出冲突组合键与全部冲突标签，例如
+  `快捷键「1」被标签「适用范围」、「机械性能」同时占用。请为其中一个标签更换快捷键后重试。`；
+- `shortcuts_unset` 删除覆盖项后回落到默认 1–9，若不是前 9 个标签则「无快捷键」；
+- `labels_remove` 删除标签时同步删除该标签的覆盖项；
+- 新建项目默认 `shortcuts: {}`；拆分项目时新项目整份继承源项目的 `shortcuts`。
 
 ### 文件与转换
 

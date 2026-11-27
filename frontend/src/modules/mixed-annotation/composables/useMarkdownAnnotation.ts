@@ -11,6 +11,12 @@ import {
   rangeToCanonicalOffsets,
 } from '../utils/markdown'
 import type { TextMap } from '../utils/markdown'
+import {
+  comboFromKeyboardEvent,
+  effectiveShortcuts,
+  isReservedShortcut,
+  shortcutIndex,
+} from '../utils/shortcuts'
 
 /**
  * 渲染后 Markdown 的实体/关系标注领域状态。
@@ -87,6 +93,11 @@ interface AnnotationSnapshot {
 interface UseMarkdownAnnotationOptions {
   labels: () => string[]
   relationTypes: () => string[]
+  /**
+   * 项目级自定义快捷键覆盖项；缺省表示全部沿用默认 1–9。
+   * 用 getter 传入，父组件替换项目对象后无需重建组合式函数。
+   */
+  shortcuts?: () => Record<string, string>
   /** 标注画布被 v-show 隐藏或处于编辑模式时，不应响应全局快捷键。 */
   isActive?: () => boolean
 }
@@ -143,6 +154,16 @@ export function useMarkdownAnnotation(options: UseMarkdownAnnotationOptions) {
     return relations.value[index] ?? null
   })
 
+  /**
+   * 有效快捷键的反查表（组合键 → 标签）。
+   * 依赖标签顺序与项目覆盖项，二者变化时自动重建；按键处理只做一次 Map 命中。
+   */
+  const shortcutByCombo = computed<Map<string, string>>(() =>
+    shortcutIndex(
+      effectiveShortcuts(options.labels(), options.shortcuts?.() ?? {}),
+    ),
+  )
+
   /* ============================================================
      文档与数据
      ============================================================ */
@@ -183,7 +204,7 @@ export function useMarkdownAnnotation(options: UseMarkdownAnnotationOptions) {
     }
 
     const usedIds = new Set<number>()
-    const loadedSpans: AnnotationSpan[] = []
+    let loadedSpans: AnnotationSpan[] = []
     let maxId = 0
 
     for (const source of Array.isArray(record.spans) ? record.spans : []) {
@@ -230,13 +251,40 @@ export function useMarkdownAnnotation(options: UseMarkdownAnnotationOptions) {
       loadedSpans.push(span)
     }
 
+    /*
+     * 历史数据里存在完全重复的记录（同一范围、同一标签被保存了多次）。
+     * 按「范围 + 标签」去重，保留后出现的记录（id 更大，通常是最后一次操作）；
+     * 不同标签标注同一范围的冲突不在这里合并——它们是真实的数据冲突，
+     * 画布会把同一范围的标签合并到一枚胶囊里展示，用户重新应用标签时再收敛。
+     */
+    const uniqueSpans = new Map<string, AnnotationSpan>()
+    const duplicateIdRemap = new Map<number, number>()
+    for (const span of loadedSpans) {
+      const key = `${span.start}:${span.end}:${span.label}`
+      const existing = uniqueSpans.get(key)
+      if (existing) duplicateIdRemap.set(existing.id, span.id)
+      uniqueSpans.set(key, span)
+    }
+    loadedSpans = Array.from(uniqueSpans.values())
+
+    // 重复记录被合并后，原本指向旧 id 的关系改指向保留的那条，避免关系静默丢失。
+    const resolveSpanId = (id: number): number => {
+      let current = id
+      for (let step = 0; step < 32; step += 1) {
+        const next = duplicateIdRemap.get(current)
+        if (next === undefined) return current
+        current = next
+      }
+      return current
+    }
+
     const spanIds = new Set(loadedSpans.map((span) => span.id))
     const seenRelations = new Set<string>()
     const loadedRelations: AnnotationRelation[] = []
 
     for (const relation of Array.isArray(record.relations) ? record.relations : []) {
-      const fromId = Number(relation.fromId)
-      const toId = Number(relation.toId)
+      const fromId = resolveSpanId(Number(relation.fromId))
+      const toId = resolveSpanId(Number(relation.toId))
       const type = typeof relation.type === 'string' ? relation.type.trim() : ''
       if (!spanIds.has(fromId) || !spanIds.has(toId) || fromId === toId || !type) continue
       const key = `${fromId}:${toId}:${type}`
@@ -388,6 +436,55 @@ export function useMarkdownAnnotation(options: UseMarkdownAnnotationOptions) {
     if (!selection) return false
     if (!options.labels().includes(label)) return false
 
+    /*
+     * 同一段文本重复标注时不要继续新增 span：
+     * - 同范围、同标签：已经是想要的结果，直接当作成功，避免生成完全重复的记录；
+     * - 同范围、不同标签：用新标签整体替换该范围上的旧标签，避免一段文本越标越多。
+     * 多人/多次标注留下的冲突，用户重新选中这段文本并应用一次标签即可收敛为一条。
+     */
+    const sameRange = spans.value.filter(
+      (span) => span.start === selection.start && span.end === selection.end,
+    )
+    if (sameRange.length > 0) {
+      if (sameRange.every((span) => span.label === label)) {
+        const existing = sameRange[sameRange.length - 1]
+        pendingSelection.value = null
+        pendingRelation.value = null
+        selectedSpanId.value = existing.id
+        selectedRelationIndex.value = null
+        relationFromId.value = null
+        clearBrowserSelection()
+        syncHighlights()
+        return true
+      }
+
+      const removedIds = new Set(sameRange.map((span) => span.id))
+      pushHistory()
+      spans.value = spans.value.filter((span) => !removedIds.has(span.id))
+      relations.value = relations.value.filter(
+        (relation) =>
+          !removedIds.has(relation.fromId) && !removedIds.has(relation.toId),
+      )
+      const relabeled: AnnotationSpan = {
+        id: nextId.value,
+        start: selection.start,
+        end: selection.end,
+        label,
+        text: selection.text,
+      }
+      if (selection.blockId) relabeled.blockId = selection.blockId
+      nextId.value += 1
+      spans.value = [...spans.value, relabeled]
+      pendingSelection.value = null
+      pendingRelation.value = null
+      selectedSpanId.value = relabeled.id
+      selectedRelationIndex.value = null
+      relationFromId.value = null
+      clearBrowserSelection()
+      syncHighlights()
+      return true
+    }
+
     pushHistory()
     const span: AnnotationSpan = {
       id: nextId.value,
@@ -462,7 +559,22 @@ export function useMarkdownAnnotation(options: UseMarkdownAnnotationOptions) {
       syncHighlights()
       return false
     }
+    return selectSpan(hit)
+  }
 
+  /**
+   * 按 id 选中实体：点击标签名胶囊时使用。
+   * 胶囊在正文上方，若让事件穿透会按坐标选中相邻实体，
+   * 因此这里直接命中胶囊对应的 span，保证「点哪枚标签就选中哪处标注」。
+   */
+  function selectSpanById(spanId: number): boolean {
+    const hit = getSpan(spanId)
+    if (!hit) return false
+    return selectSpan(hit)
+  }
+
+  /** 选中/关系起点状态机；点击正文与点击标签名胶囊共用。 */
+  function selectSpan(hit: AnnotationSpan): boolean {
     if (pendingRelation.value) {
       pendingRelation.value = null
       relationFromId.value = hit.id
@@ -610,20 +722,33 @@ export function useMarkdownAnnotation(options: UseMarkdownAnnotationOptions) {
      快捷键
      ============================================================ */
 
+  /** 输入框 / 文本域 / 可编辑区域内不响应标注快捷键（保留浏览器原生的输入行为）。 */
+  function isEditableTarget(target: EventTarget | null): boolean {
+    if (!(target instanceof HTMLElement)) return false
+    return (
+      target.tagName === 'INPUT' ||
+      target.tagName === 'TEXTAREA' ||
+      target.tagName === 'SELECT' ||
+      target.isContentEditable
+    )
+  }
+
+  /**
+   * 焦点在弹窗内时不做标注快捷键处理。
+   *
+   * 弹窗打开后画布仍处于激活态（只是被遮罩盖住），若继续响应按键，
+   * 快捷键设置弹窗的「录制」会被背景画布抢先应用标签，甚至一次按键
+   * 同时触发录制与标注。这里以对话框语义作为边界，比依赖监听器注册顺序可靠。
+   */
+  function isInsideDialog(target: EventTarget | null): boolean {
+    if (!(target instanceof Element)) return false
+    return target.closest('[role="dialog"], [role="alertdialog"]') !== null
+  }
+
   function handleKeydown(event: KeyboardEvent): void {
     if (event.defaultPrevented || event.isComposing) return
     if (options.isActive && !options.isActive()) return
-
-    const target = event.target as HTMLElement | null
-    if (
-      target &&
-      (target.tagName === 'INPUT' ||
-        target.tagName === 'TEXTAREA' ||
-        target.tagName === 'SELECT' ||
-        target.isContentEditable)
-    ) {
-      return
-    }
+    if (isEditableTarget(event.target) || isInsideDialog(event.target)) return
 
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z' && !event.shiftKey) {
       if (canUndo.value) {
@@ -656,20 +781,28 @@ export function useMarkdownAnnotation(options: UseMarkdownAnnotationOptions) {
       return
     }
 
-    if (!/^[1-9]$/.test(event.key) || event.altKey || event.shiftKey) return
-    const shortcutIndex = Number(event.key) - 1
-
-    if (event.ctrlKey || event.metaKey) {
+    // Ctrl+1–9 属于关系快捷键，永远优先于标签快捷键：
+    // 即使某个标签自定义了组合键，也不能劫持待选关系时的 Ctrl+数字。
+    if (
+      (event.ctrlKey || event.metaKey) &&
+      !event.altKey &&
+      !event.shiftKey &&
+      /^[1-9]$/.test(event.key)
+    ) {
       if (!pendingRelation.value) return
-      const type = options.relationTypes()[shortcutIndex]
+      const type = options.relationTypes()[Number(event.key) - 1]
       if (!type) return
       event.preventDefault()
       applyRelation(type)
       return
     }
 
+    // 标签快捷键：默认前 9 个标签 1–9，项目覆盖项优先（支持单键与 Ctrl/Alt 组合）。
+    // 没有待标注选区时不拦截按键，避免把页面上其它普通按键吞掉。
     if (!pendingSelection.value) return
-    const label = options.labels()[shortcutIndex]
+    const combo = comboFromKeyboardEvent(event)
+    if (!combo || isReservedShortcut(combo)) return
+    const label = shortcutByCombo.value.get(combo)
     if (!label) return
     event.preventDefault()
     applyLabel(label)
@@ -846,6 +979,7 @@ export function useMarkdownAnnotation(options: UseMarkdownAnnotationOptions) {
     applyLabel,
     applyRelation,
     selectSpanAtPoint,
+    selectSpanById,
     selectRelation,
     setLinkedSpans,
     cancelPendingSelection,

@@ -15,6 +15,7 @@ from config import (
     OCR_CONNECT_TIMEOUT,
     OCR_DOWNLOAD_TIMEOUT,
     OCR_HEALTH_TIMEOUT,
+    OCR_REGION_TIMEOUT,
     OCR_STATUS_TIMEOUT,
     OCR_SUBMIT_TIMEOUT,
     OCR_WORKER_URL,
@@ -92,6 +93,7 @@ async def submit_convert(
     enable_table: bool,
     enable_formula: bool,
     dpi: int,
+    parse_method: str = "auto",
 ) -> str:
     """提交转换任务，返回 Worker 的 task_id。"""
 
@@ -102,6 +104,7 @@ async def submit_convert(
                 "enable_table": "true" if enable_table else "false",
                 "enable_formula": "true" if enable_formula else "false",
                 "dpi": str(dpi),
+                "parse_method": (parse_method or "auto").strip() or "auto",
             }
             async with httpx.AsyncClient(
                 base_url=OCR_WORKER_URL,
@@ -153,6 +156,41 @@ async def get_task(task_id: str) -> dict[str, Any]:
         raise OcrWorkerError("OCR Worker 返回了非 JSON 状态") from exc
     if not isinstance(payload, dict):
         raise OcrWorkerError("OCR Worker 状态格式不正确")
+    return payload
+
+
+async def recognize_region(
+    content: bytes,
+    *,
+    filename: str = "region.png",
+    content_type: str = "image/png",
+) -> dict[str, Any]:
+    """调用 Worker 的小图 OCR，返回 ``{lines: [{text, score, top, left}]}``。
+
+    小图 OCR 是图表标题自动预填的“锦上添花”，失败由调用方降级为手动填写。
+    """
+
+    files = {"file": (filename, content, content_type)}
+    try:
+        async with httpx.AsyncClient(
+            base_url=OCR_WORKER_URL,
+            timeout=_timeout(OCR_REGION_TIMEOUT),
+            trust_env=False,
+        ) as client:
+            response = await client.post("/ocr/region", files=files)
+    except (httpx.HTTPError, OSError) as exc:
+        raise OcrWorkerError(f"无法连接 OCR Worker：{exc}") from exc
+
+    if response.status_code >= 400:
+        raise OcrWorkerError(
+            f"OCR Worker 识别失败（HTTP {response.status_code}）：{_worker_detail(response)}"
+        )
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise OcrWorkerError("OCR Worker 返回了非 JSON 响应") from exc
+    if not isinstance(payload, dict):
+        raise OcrWorkerError("OCR Worker 返回格式不正确")
     return payload
 
 

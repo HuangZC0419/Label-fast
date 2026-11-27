@@ -8,6 +8,12 @@ const props = defineProps<{
   importing: boolean
   importProgress: ImportProgress | null
   batchSummary?: BatchSummary
+  /**
+   * 嵌入模式：被 ImportDialog 复用时，弹窗自己负责标题与外壳，
+   * 面板层不再重复渲染「导入 Import / PDF · PNG · JPG」头部与外边框。
+   * 拖拽、目录扫描、文件选择、进度与队列统计逻辑完全一致，不做分支。
+   */
+  embedded?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -277,8 +283,9 @@ function onDrop(event: DragEvent): void {
 </script>
 
 <template>
-  <section class="panel upload-panel">
-    <header class="panel-head">
+  <section class="panel upload-panel" :class="{ 'is-embedded': embedded }">
+    <!-- 嵌入弹窗时头部由 ImportDialog 提供，避免出现两套「导入」标题。 -->
+    <header v-if="!embedded" class="panel-head">
       <h2 class="panel-title">导入 <span class="panel-title-cn">Import</span></h2>
       <span class="panel-count">PDF · PNG · JPG</span>
     </header>
@@ -464,6 +471,38 @@ function onDrop(event: DragEvent): void {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+/*
+ * 嵌入模式：去掉 .panel 的底部分隔线/背景/内边距，交给弹窗统一控制留白。
+ * 选择器加 .upload-panel 前缀以压过全局 .mx-root .panel 与 .panel-body。
+ */
+.upload-panel.is-embedded {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.upload-panel.is-embedded .panel-body {
+  padding: 0;
+  gap: 12px;
+}
+
+/* 弹窗空间更充裕，拖拽区加高到约 170px，落点更好辨认，也不改变原有交互逻辑。 */
+.upload-panel.is-embedded .dropzone {
+  min-height: 170px;
+  gap: 6px;
+  padding: 18px 14px;
+}
+
+.upload-panel.is-embedded .dropzone-icon {
+  width: 30px;
+  height: 30px;
+  margin-bottom: 4px;
+}
+
+.upload-panel.is-embedded .dropzone-title {
+  font-size: 13px;
 }
 
 /* 选择器带上 .upload-actions 前缀，确保压过全局 .mx-root .mx-btn 的同名属性。 */

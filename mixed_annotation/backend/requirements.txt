@@ -3,3 +3,5 @@ fastapi>=0.115
 uvicorn[standard]>=0.30
 python-multipart>=0.0.9
 httpx>=0.27
+# 多项目标注明细导出（services/excel_export_service.py）
+openpyxl>=3.1

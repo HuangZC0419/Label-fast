@@ -135,6 +135,32 @@
   border-right: 1px solid var(--line);
 }
 
+/*
+ * 字典卡片展开全部标签时，侧栏改为整体滚动，避免卡片内部裁切内容。
+ * 展开状态留在卡片内部（.dict-panel.is-expanded），父级只用 :has() 响应，
+ * 不引入额外的 props 或事件，组件职责边界保持不变。
+ */
+@media (min-width: 901px) {
+  .mx-root .project-sidebar:has(.dict-panel.is-expanded) {
+    overflow-y: auto;
+  }
+
+  /* 展开后卡片必须按内容撑开，不能参与侧栏的高度压缩，否则仍会被裁切。 */
+  .mx-root .project-sidebar:has(.dict-panel.is-expanded) .dict-panel {
+    flex: 0 0 auto;
+  }
+
+  /* 侧栏可滚动后，文件列表不再抢占剩余高度，避免被压成零高。 */
+  .mx-root .project-sidebar:has(.dict-panel.is-expanded) .file-panel {
+    flex: 0 0 auto;
+    min-height: 120px;
+  }
+
+  .mx-root .project-sidebar:has(.dict-panel.is-expanded) .file-scroll {
+    max-height: 42vh;
+  }
+}
+
 .mx-root .mx-main {
   flex: 1;
   min-width: 0;
@@ -167,14 +193,18 @@
 /* ============================================================
    顶部栏
    ============================================================ */
+/*
+ * 模块头：项目切换器 + 设置 + 工作区行 + 导出动作，全部压在同一行（56px）。
+ * 工作区的文件标题与视图控件由 workspace 插槽注入，不再单独占一行。
+ */
 .mx-root .mx-header {
   flex-shrink: 0;
-  height: 64px;
-  min-height: 64px;
+  height: 56px;
+  min-height: 56px;
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 0 22px;
+  gap: 12px;
+  padding: 0 18px;
   background: rgba(255, 253, 249, .9);
   border-bottom: 1px solid var(--line);
   backdrop-filter: blur(16px) saturate(1.05);
@@ -183,19 +213,57 @@
   z-index: 20;
 }
 
+/* ---------- 工作区插槽（文件头合并进模块头） ---------- */
+.mx-root .header-workspace {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+/*
+ * Teleport 出来的 .mw-toolbar 已脱离 .mixed-workspace，必须在这里补齐同一组
+ * --mw-* 主题变量，否则标题、状态点与视图按钮会丢失配色/字体/边框。
+ * 变量留在插槽上，向下继承给标题行、ModeToggle 与各个按钮。
+ */
+.mx-workspace-slot {
+  --mw-paper: var(--paper, #f6f3ec);
+  --mw-paper-deep: var(--paper-deep, #efebe2);
+  --mw-surface: var(--surface, #fffdf9);
+  --mw-raised: var(--surface-raised, #fff);
+  --mw-sunken: var(--surface-sunken, #f2eee6);
+  --mw-ink: var(--ink, #17181b);
+  --mw-ink-2: var(--ink-2, #3e4147);
+  --mw-ink-3: var(--ink-3, #6e727a);
+  --mw-ink-4: var(--ink-4, #9a9da3);
+  --mw-line: var(--line, #e2dccf);
+  --mw-line-strong: var(--line-strong, #d2caba);
+  --mw-signal: var(--signal, #e4572e);
+  --mw-signal-deep: var(--signal-deep, #c44722);
+  --mw-signal-soft: var(--signal-soft, #fbe8e1);
+  --mw-signal-ink: var(--signal-ink, #8e2f14);
+  --mw-success: var(--success, #2f7d5b);
+  --mw-warning: var(--warning, #a9761e);
+  --mw-warning-bg: var(--warning-bg, #faf2e1);
+  --mw-danger: var(--danger, #b5403a);
+  --mw-danger-bg: var(--danger-bg, #faecea);
+  --mw-mono: var(--font-mono, 'Geist Mono', ui-monospace, Consolas, monospace);
+  --mw-display: var(--font-display, 'Instrument Serif', Georgia, serif);
+  --mw-ease: var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1));
+  --mw-shadow-xs: var(--shadow-xs, 0 1px 2px rgba(35, 29, 19, 0.05));
+  --mw-shadow: var(--shadow, 0 18px 44px -28px rgba(35, 29, 19, 0.22));
+
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  min-width: 0;
+  height: 100%;
+}
+
+/* 顶栏项目区：仅作为切换器的定位与布局包裹层。 */
 .mx-root .header-project {
-  display: block;
+  position: relative;
   flex-shrink: 0;
-}
-
-.mx-root .header-select {
-  width: 210px;
-  height: 34px;
-  background-color: rgba(255, 255, 255, .55);
-}
-
-.mx-root .header-create {
-  flex: 0 0 auto;
 }
 
 /* ---------- 顶栏项目操作菜单 ---------- */
@@ -238,6 +306,14 @@
   color: var(--ink);
 }
 
+/* 不可用项（如没有文件时的「拆分项目」）：保留占位，但不能被误解为可点击。 */
+.mx-root .header-menu-item:disabled {
+  opacity: .42;
+  cursor: not-allowed;
+  background: transparent;
+  color: var(--ink-4);
+}
+
 .mx-root .header-menu-item.is-danger {
   color: var(--danger);
 }
@@ -250,6 +326,238 @@
   height: 1px;
   margin: 4px 6px;
   background: var(--line);
+}
+
+/* ---------- 项目切换器 ---------- */
+.mx-root .project-switch {
+  position: relative;
+  min-width: 0;
+}
+
+.mx-root .project-switch-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* 模块头压到 56px 后，触发器同步收紧到 38px，仍保留两行文案（标签 + 项目名）。 */
+  height: 38px;
+  min-width: 180px;
+  max-width: 240px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, .72);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 160ms var(--ease-out),
+    background-color 160ms var(--ease-out),
+    box-shadow 160ms var(--ease-out);
+}
+
+.mx-root .project-switch-trigger:hover:not(:disabled) {
+  border-color: var(--line-strong);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-xs);
+}
+
+.mx-root .project-switch-trigger:focus-visible {
+  border-color: var(--line-strong);
+  box-shadow: 0 0 0 3px rgba(196, 71, 34, .14);
+}
+
+.mx-root .project-switch-trigger.is-open {
+  border-color: var(--line-strong);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-xs);
+}
+
+.mx-root .project-switch-trigger:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+
+.mx-root .project-switch-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.mx-root .project-switch-eyebrow {
+  font-size: 10px;
+  line-height: 1;
+  letter-spacing: .08em;
+  color: var(--ink-4);
+  white-space: nowrap;
+}
+
+.mx-root .project-switch-name {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--ink);
+}
+
+.mx-root .project-switch-chevron {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--ink-4);
+  transition: transform 180ms var(--ease-out);
+}
+
+.mx-root .project-switch-trigger.is-open .project-switch-chevron {
+  transform: rotate(180deg);
+}
+
+/* ---------- 项目切换器下拉面板 ---------- */
+.mx-root .project-switch-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 40;
+  min-width: 300px;
+  max-width: min(360px, calc(100vw - 24px));
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  box-shadow: 0 18px 40px -24px rgba(35, 29, 19, .32);
+  animation: mx-menu-in 140ms var(--ease-out) both;
+}
+
+/* 面板内条目的焦点环内收，避免与「当前项目」选中底色叠成粗描边。 */
+.mx-root .project-switch-panel :focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: -2px;
+}
+
+.mx-root .project-switch-caption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 8px 6px;
+  font-size: 10px;
+  letter-spacing: .08em;
+  color: var(--ink-4);
+}
+
+.mx-root .project-switch-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--surface-sunken);
+  color: var(--ink-3);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.mx-root .project-switch-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 264px;
+  overflow-y: auto;
+}
+
+.mx-root .project-switch-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink-2);
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color 140ms var(--ease-out),
+    color 140ms var(--ease-out);
+}
+
+.mx-root .project-switch-item:hover {
+  background: var(--surface-sunken);
+  color: var(--ink);
+}
+
+.mx-root .project-switch-item.is-active {
+  background: var(--signal-soft);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.mx-root .project-switch-item-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mx-root .project-switch-check {
+  width: 13px;
+  height: 13px;
+  flex: 0 0 auto;
+  color: var(--signal-deep);
+}
+
+.mx-root .project-switch-empty {
+  margin: 0;
+  padding: 10px 8px;
+  font-size: 11.5px;
+  color: var(--ink-4);
+}
+
+.mx-root .project-switch-sep {
+  height: 1px;
+  margin: 6px 6px;
+  background: var(--line);
+}
+
+/* 「新建项目」是面板内最主要的次级动作，比项目条目更醒目。 */
+.mx-root .project-switch-create {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 34px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--signal-deep);
+  font-size: 12.5px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 140ms var(--ease-out);
+}
+
+.mx-root .project-switch-create svg {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+}
+
+.mx-root .project-switch-create:hover {
+  background: rgba(196, 71, 34, .08);
 }
 
 @keyframes mx-menu-in {
@@ -327,6 +635,11 @@
   align-items: center;
   gap: 10px;
   flex-shrink: 0;
+}
+
+/* 模块头压到 56px 后，导出按钮收成 32px，与 30px 的视图控件在同一条视平线上。 */
+.mx-root .header-actions .mx-btn {
+  height: 32px;
 }
 
 /* ============================================================
@@ -445,7 +758,7 @@
   height: 15px;
 }
 
-/* 带文字的菜单触发按钮：宽度随内容，高度与 .header-select 对齐。
+/* 带文字的菜单触发按钮：宽度随内容，高度与顶栏控件对齐。
    必须放在 .mx-btn / .mx-btn-icon 之后，才能覆盖其固定尺寸。 */
 .mx-root .header-menu-btn {
   width: auto;
@@ -459,6 +772,169 @@
 .mx-root .header-menu-btn svg {
   width: 14px;
   height: 14px;
+}
+
+/*
+ * 顶栏「导入」主入口：深墨色实心按钮。
+ *
+ * 导入是标注前的第一个动作，却原来藏在左侧栏底部，视线要往侧栏跳一次；
+ * 移到「设置」旁边后，用最高的对比度把它和「设置」区分开——
+ * 深墨底 + 纸色字，hover 落到 signal 橙，与「导出 ZIP」的实心橙形成
+ * 「深色=进入内容，橙色=产出文件」的稳定语义。
+ */
+.mx-root .header-import {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  flex-shrink: 0;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--ink);
+  color: var(--paper);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 180ms var(--ease-out),
+    border-color 180ms var(--ease-out),
+    color 180ms var(--ease-out),
+    box-shadow 180ms var(--ease-out),
+    transform 180ms var(--ease-out);
+}
+
+.mx-root .header-import svg {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+}
+
+.mx-root .header-import:hover:not(:disabled) {
+  border-color: var(--signal);
+  background: var(--signal);
+  color: #FFFDF9;
+  box-shadow: 0 10px 22px -14px rgba(228, 87, 46, .62);
+}
+
+.mx-root .header-import:active:not(:disabled) {
+  transform: scale(.985);
+}
+
+.mx-root .header-import:disabled {
+  border-color: var(--line);
+  background: var(--surface-sunken);
+  color: var(--ink-4);
+  cursor: not-allowed;
+}
+
+.mx-root .header-import:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--signal-soft);
+}
+
+/*
+ * 重新 OCR：紧邻「导入数据」的次级主动作。
+ * 用 signal 描边 + 浅底，比导入（实心墨）弱一档，但明显比普通文字按钮更显眼。
+ */
+.mx-root .header-reconvert {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  flex-shrink: 0;
+  height: 32px;
+  padding: 0 11px;
+  border: 1px solid rgba(228, 87, 46, 0.42);
+  border-radius: var(--radius);
+  background: var(--signal-soft);
+  color: var(--signal-ink);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 180ms var(--ease-out),
+    border-color 180ms var(--ease-out),
+    color 180ms var(--ease-out),
+    box-shadow 180ms var(--ease-out),
+    transform 180ms var(--ease-out);
+}
+
+.mx-root .header-reconvert svg {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+}
+
+.mx-root .header-reconvert:hover:not(:disabled) {
+  border-color: var(--signal);
+  background: #F7DACF;
+  color: var(--signal-deep);
+  box-shadow: 0 10px 22px -16px rgba(228, 87, 46, 0.55);
+}
+
+.mx-root .header-reconvert:active:not(:disabled) {
+  transform: scale(.985);
+}
+
+.mx-root .header-reconvert:disabled {
+  border-color: var(--line);
+  background: var(--surface-sunken);
+  color: var(--ink-4);
+  cursor: not-allowed;
+}
+
+.mx-root .header-reconvert:focus-visible {
+  outline: none;
+  border-color: var(--signal);
+  box-shadow: 0 0 0 3px var(--signal-soft);
+}
+
+/* 顶栏 Excel 次级动作：文案较长，需要覆盖 .mx-btn 的基础内边距与字号，
+   因此必须放在 .mx-btn 之后；窄屏进一步收紧但不缩短文案。
+   accent 描边样式让它从「灰色文字」变成可被一眼扫到的入口，
+   但仍是浅底 + 细边，明显弱于「导出 ZIP」的实心橙。 */
+.mx-root .header-export-excel {
+  padding: 0 10px;
+  font-size: 12px;
+  gap: 5px;
+  border: 1px solid rgba(228, 87, 46, .38);
+  background: var(--signal-soft);
+  color: var(--signal-deep);
+  font-weight: 600;
+}
+
+.mx-root .header-export-excel svg {
+  width: 13px;
+  height: 13px;
+  color: currentColor;
+}
+
+.mx-root .header-export-excel:hover:not(:disabled) {
+  border-color: var(--signal);
+  background: #F7DACF;
+  color: var(--signal-ink);
+  box-shadow: 0 8px 18px -14px rgba(228, 87, 46, .5);
+}
+
+/* 禁用态保持可辨但退到背景：不用浅橙，避免看起来仍可点。 */
+.mx-root .header-export-excel:disabled {
+  border-color: var(--line);
+  background: var(--surface-sunken);
+  color: var(--ink-4);
+  opacity: .8;
+}
+
+.mx-root .header-export-excel:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--signal-soft);
 }
 
 /* ============================================================
@@ -1193,6 +1669,23 @@
     flex-basis: 296px;
   }
 
+  /*
+   * 一行放不下时允许模块头自动换行：工作区行独占第二行，
+   * 项目切换 / 设置 / 导出仍在第一行，避免按钮被挤出可见区域。
+   */
+  .mx-root .mx-header {
+    height: auto;
+    min-height: 56px;
+    flex-wrap: wrap;
+    row-gap: 6px;
+    padding: 8px 16px;
+  }
+
+  .mx-root .header-workspace {
+    flex: 1 1 100%;
+    order: 5;
+  }
+
   .mx-root .header-file {
     max-width: 240px;
   }
@@ -1211,7 +1704,7 @@
 
   .mx-root .mx-header {
     height: auto;
-    min-height: 64px;
+    min-height: 56px;
     flex-wrap: wrap;
     gap: 10px;
     padding: 10px 16px;
@@ -1222,18 +1715,38 @@
     margin-left: auto;
   }
 
-  .mx-root .header-project,
-  .mx-root .header-create,
+  .mx-root .header-project {
+    order: 3;
+    flex: 1 1 200px;
+    min-width: 0;
+  }
+
   .mx-root .header-menu {
+    order: 3;
+    flex: 0 0 auto;
+  }
+
+  /* 换行布局下「导入」跟着项目区一起排第一行，不要因为默认 order 跑到最前面。 */
+  .mx-root .header-import {
     order: 3;
   }
 
-  .mx-root .header-project {
-    flex: 1 1 160px;
+  .mx-root .header-reconvert {
+    order: 3;
   }
 
-  .mx-root .header-select {
+  .mx-root .project-switch-trigger {
     width: 100%;
+    min-width: 0;
+    max-width: none;
+  }
+
+  .mx-root .project-switch-name {
+    max-width: none;
+  }
+
+  .mx-root .project-switch-panel {
+    max-width: calc(100vw - 24px);
   }
 
   .mx-root .header-file {
@@ -1285,6 +1798,29 @@
 
   .mx-root .header-actions {
     gap: 6px;
+  }
+
+  /* 窄屏不缩文案（按钮名必须完整可读），只压缩内外边距。 */
+  .mx-root .header-export-excel {
+    gap: 4px;
+    padding: 0 8px;
+    font-size: 11.5px;
+  }
+
+  .mx-root .header-export {
+    padding: 0 9px;
+    font-size: 11.5px;
+  }
+
+  /* 窄屏只收内边距，按钮文案「导入」必须完整可读。 */
+  .mx-root .header-import {
+    padding: 0 10px;
+    font-size: 11.5px;
+  }
+
+  .mx-root .header-reconvert {
+    padding: 0 9px;
+    font-size: 11.5px;
   }
 
   .mx-root .panel-head {

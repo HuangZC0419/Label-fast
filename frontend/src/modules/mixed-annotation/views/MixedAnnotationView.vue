@@ -6,11 +6,15 @@ import AppHeader from '../components/AppHeader.vue'
 import FileList from '../components/project/FileList.vue'
 import ProjectDictionaryCard from '../components/project/ProjectDictionaryCard.vue'
 import ProjectSettingsDialog from '../components/project/ProjectSettingsDialog.vue'
-import UploadPanel from '../components/project/UploadPanel.vue'
+import ExportExcelDialog from '../components/project/ExportExcelDialog.vue'
+import SplitProjectDialog from '../components/project/SplitProjectDialog.vue'
+import ShortcutSettingsDialog from '../components/project/ShortcutSettingsDialog.vue'
+import ImportDialog from '../components/project/ImportDialog.vue'
+import ReconvertDialog from '../components/project/ReconvertDialog.vue'
 import ConfirmDialog from '../components/common/ConfirmDialog.vue'
 import EmptyState from '../components/common/EmptyState.vue'
 import MixedWorkspace from '../components/workspace/MixedWorkspace.vue'
-import { apiFetch, downloadProjectZip } from '../api/client'
+import { ApiError, apiFetch, downloadProjectExcel, downloadProjectZip } from '../api/client'
 import type {
   BatchSummary,
   ConversionOptions,
@@ -19,7 +23,11 @@ import type {
   MixedFile,
   Project,
   ProjectDictionaryPatch,
+  ProjectLabelUsage,
   ProjectSettingsPayload,
+  ProjectShortcutsPatch,
+  ProjectSplitResponse,
+  SplitGroup,
 } from '../types'
 
 /**
@@ -80,11 +88,25 @@ interface WorkspaceApi {
   flushSave: () => Promise<boolean>
 }
 
+/** 字典卡片的命令式接口：删除在用标签的确认被取消时还原草稿。 */
+interface DictionaryCardApi {
+  restoreRemoved: (section: 'labels' | 'relation_types', value: string) => void
+}
+
+/** 待确认的「删除在用标签」请求：确认后才入队，取消时不发送任何 PATCH。 */
+interface LabelRemovePrompt {
+  patch: ProjectDictionaryPatch
+}
+
+/** 后端恢复接口的响应：完整项目对象 + 本次补回的标签列表。 */
+type LabelRestorePayload = Partial<Project> & { restored?: string[]; project?: Partial<Project> }
+
 const projects = ref<Project[]>([])
 const currentProject = ref<Project | null>(null)
 const files = ref<MixedFile[]>([])
 const selectedFile = ref<MixedFile | null>(null)
 const workspaceRef = ref<WorkspaceApi | null>(null)
+const dictionaryCardRef = ref<DictionaryCardApi | null>(null)
 
 const projectsLoading = ref(false)
 const filesLoading = ref(false)
@@ -95,14 +117,36 @@ const importing = ref(false)
 const scanBusy = ref(false)
 const importProgress = ref<ImportProgress | null>(null)
 const exporting = ref(false)
+/** 「导入」弹窗：上传面板从左侧栏搬到顶栏按钮后面，这里是它的开关。 */
+const importOpen = ref(false)
+/** 「导出 Excel 表单」弹窗：可多选项目，导出期间禁止重复提交。 */
+const excelOpen = ref(false)
+const exportingExcel = ref(false)
+const excelError = ref('')
 /** 统一设置弹窗：创建与编辑共用；字典项由左侧卡片独立保存。 */
 const settingsOpen = ref(false)
 const settingsMode = ref<'create' | 'edit'>('edit')
 const settingsError = ref('')
+/** 「拆分项目」弹窗：按文件序号区间把当前项目拆成多个新项目。 */
+const splitOpen = ref(false)
+const splitBusy = ref(false)
+const splitError = ref('')
+/** 「自定义快捷键」弹窗：项目级共享，保存时走 PATCH 的 set/unset 增量。 */
+const shortcutOpen = ref(false)
+const shortcutBusy = ref(false)
+const shortcutError = ref('')
 /** 字典卡片保存状态，供卡片展示「保存中 / 已保存 / 失败」反馈。 */
 const dictionaryStatus = ref<DictionaryStatus>('idle')
+/** 标签引用统计：删除前确认与「字典缺失」区域都依赖它。 */
+const labelUsage = ref<ProjectLabelUsage>({ used: {}, missing: [] })
+/** 「全部恢复」请求进行中。 */
+const restoringLabels = ref(false)
 const deleteOpen = ref(false)
 const deleteError = ref('')
+/** 删除在用标签的确认弹窗：不再是浏览器原生 confirm，避免丢失引用条数说明。 */
+const labelRemoveOpen = ref(false)
+const labelRemoveMessage = ref('')
+const pendingLabelRemove = ref<LabelRemovePrompt | null>(null)
 /** 删除目标快照：删除过程中 currentProject/files 会被清空，弹窗文案不能跟着变。 */
 const deleteTargetName = ref('')
 const deleteImpactText = ref('')
@@ -116,7 +160,7 @@ let dictionaryDebounceTimer: number | null = null
 let dictionarySavedTimer: number | null = null
 /** 递增令牌：旧的「已保存 → 空闲」定时器不得覆盖更新的状态。 */
 let dictionarySavedToken = 0
-/** 待提交的增量字段，同字段以最新值为准。 */
+/** 待提交的增量字段：同字段 add/remove 各自求并集，互斥项以最后一次操作为准。 */
 let dictionaryPending: ProjectDictionaryPatch = {}
 let dictionarySaveInFlight = false
 let dictionaryRerun = false
@@ -124,12 +168,62 @@ let dictionaryRerun = false
 let dictionaryGeneration = 0
 /** 字典成功回写代数：晚到的详情快照据此判断是否应保留本地字典。 */
 let dictionaryRevision = 0
+/** usage 请求令牌：只接受「当前项目 + 最新一次请求」的响应，旧响应直接丢弃。 */
+let labelUsageToken = 0
 
 const conversionOptions = reactive<ConversionOptions>({
   enable_table: true,
   enable_formula: false,
   dpi: 200,
+  parse_method: 'auto',
 })
+
+/* 「重新 OCR」弹窗：按文件覆盖识别参数，不影响项目默认上传参数。 */
+const reconvertOpen = ref(false)
+const reconvertBusy = ref(false)
+const reconvertError = ref('')
+
+function openReconvertDialog(): void {
+  if (!selectedFile.value || selectedFile.value.status === 'converting') return
+  reconvertError.value = ''
+  reconvertOpen.value = true
+}
+
+async function submitReconvert(options: ConversionOptions): Promise<void> {
+  const file = selectedFile.value
+  const project = currentProject.value
+  if (!file || !project || reconvertBusy.value) return
+
+  reconvertBusy.value = true
+  reconvertError.value = ''
+  try {
+    await apiFetch<unknown>(`/files/${encodeURIComponent(file.id)}/convert`, {
+      method: 'POST',
+      body: JSON.stringify(options),
+    })
+    reconvertOpen.value = false
+    file.status = 'converting'
+    file.progress = 0
+    file.stage = '已提交'
+    file.error = ''
+    file.message = ''
+    await loadProjectDetail(project.id)
+    setNotice(
+      'info',
+      `已按 ${options.dpi} DPI / ${
+        options.parse_method === 'ocr'
+          ? '强制 OCR'
+          : options.parse_method === 'txt'
+            ? '仅文本层'
+            : '自动解析'
+      } 重新提交「${file.name}」`,
+    )
+  } catch (error) {
+    reconvertError.value = messageOf(error)
+  } finally {
+    reconvertBusy.value = false
+  }
+}
 
 const fileStatusLabel = computed(() =>
   selectedFile.value ? STATUS_LABELS[selectedFile.value.status] : '',
@@ -162,7 +256,7 @@ const emptyState = computed(() => {
   if (!currentProject.value) {
     return {
       title: 'Start here.',
-      message: '先在顶栏新建项目，再上传 PDF 或图片开始转换。',
+      message: '先在顶栏新建项目，再点顶部「导入」上传 PDF 或图片开始转换。',
     }
   }
   return {
@@ -394,6 +488,8 @@ async function loadProjectDetail(
       ? mergeFileList(detail.files)
       : detail.files
     syncSelectedFile()
+    // 详情加载成功后刷新引用统计：多人协作时别人的标注可能新增缺失标签。
+    void refreshLabelUsage(detail.project.id)
     return true
   } catch (error) {
     if (requestId === detailRequest && currentProject.value?.id === id) {
@@ -432,6 +528,8 @@ async function openProject(id: string): Promise<void> {
   if (!summary) return
   // 切换项目前丢弃上一项目尚未落盘的字典保存队列，避免写错项目。
   resetDictionarySaving()
+  // 引用统计属于项目维度：先清空，避免短暂展示上一个项目的缺失标签。
+  resetLabelUsage()
   currentProject.value = summary
   files.value = []
   selectedFile.value = null
@@ -455,6 +553,7 @@ async function loadProjects(preferredId?: string): Promise<void> {
 
     if (!target) {
       resetDictionarySaving()
+      resetLabelUsage()
       currentProject.value = null
       files.value = []
       selectedFile.value = null
@@ -496,6 +595,29 @@ function onScanningChange(active: boolean): void {
   scanBusy.value = active
 }
 
+/* ------------------------------------------------------------------ */
+/* 导入弹窗                                                            */
+/* ------------------------------------------------------------------ */
+
+/** 顶栏「导入」按钮：没有项目时按钮已禁用，这里再兜一层并给出原因。 */
+function openImportDialog(): void {
+  if (!currentProject.value) {
+    setNotice('error', '请先新建或选择项目，再导入文件。')
+    return
+  }
+  if (scanBusy.value) return
+  importOpen.value = true
+}
+
+/**
+ * 弹窗开关：上传/转换进行中允许关闭（上传任务由本组件继续，后台排队不受影响），
+ * 用户可以先关掉窗口回去标注。ImportDialog 常驻挂载，因此目录扫描的
+ * scanning-change 不会因为关闭弹窗而丢失，scanBusy 仍能正常释放。
+ */
+function onImportOpenChange(open: boolean): void {
+  importOpen.value = open
+}
+
 async function selectFile(id: string): Promise<void> {
   const file = files.value.find((item) => item.id === id)
   if (!file || file.id === selectedFile.value?.id) return
@@ -515,18 +637,23 @@ async function refreshFiles(): Promise<void> {
 /** 工作区保存 / 主动刷新后同步文件元数据；失败保持静默，不打断编辑。 */
 async function refreshSelectedFile(): Promise<void> {
   const current = selectedFile.value
-  if (!current) return
   try {
-    const payload = await apiFetch<unknown>(
-      `/files/${encodeURIComponent(current.id)}`,
-    )
-    const record = asRecord(payload)
-    const nested = asRecord(record?.file) ?? record
-    if (!nested || typeof nested.id !== 'string') return
-    mergeFile(nested as unknown as MixedFile)
+    if (current) {
+      const payload = await apiFetch<unknown>(
+        `/files/${encodeURIComponent(current.id)}`,
+      )
+      const record = asRecord(payload)
+      const nested = asRecord(record?.file) ?? record
+      if (nested && typeof nested.id === 'string') {
+        mergeFile(nested as unknown as MixedFile)
+      }
+    }
   } catch {
     // 后台刷新失败不产生提示；下一轮轮询或手动刷新会补齐。
   }
+  // 标注变动可能让「被引用但字典缺失」的标签集合变化，静默刷新一次统计。
+  const projectId = currentProject.value?.id
+  if (projectId) void refreshLabelUsage(projectId)
 }
 
 /* ------------------------------------------------------------------ */
@@ -613,14 +740,225 @@ async function saveProject(draft: ProjectDraft): Promise<boolean> {
 }
 
 /* ------------------------------------------------------------------ */
+/* 按文件序号区间拆分项目                                              */
+/* ------------------------------------------------------------------ */
+
+/** 顶栏「设置」菜单入口：没有文件时该项已被禁用，这里再兜一层。 */
+function openSplitDialog(): void {
+  if (!currentProject.value) return
+  if (files.value.length === 0) {
+    setNotice('error', '当前项目没有可拆分的文件。')
+    return
+  }
+  splitError.value = ''
+  splitOpen.value = true
+}
+
+/**
+ * 提交拆分：文件是**移动**语义，拆完源项目可能不再包含任何文件。
+ *
+ * 顺序很重要：先落盘当前文件的标注与字典，再提交拆分——
+ * 新项目会继承字典与快捷键，未落盘的修改不会跟着过去。
+ * 失败时把后端中文 detail 就地显示在弹窗内（而非只发全局提示）。
+ */
+async function submitSplit(groups: SplitGroup[]): Promise<void> {
+  const project = currentProject.value
+  if (!project || splitBusy.value) return
+  const projectId = project.id
+  splitError.value = ''
+
+  const saved = await workspaceRef.value?.flushSave()
+  if (saved === false) {
+    splitError.value = '当前文件的标注尚未保存成功，请先处理保存失败再拆分。'
+    return
+  }
+  if (!(await flushDictionaryNow())) {
+    splitError.value = '标签/关系尚未保存成功，请稍后重试拆分。'
+    return
+  }
+
+  splitBusy.value = true
+  try {
+    const payload = await apiFetch<ProjectSplitResponse>(
+      `/projects/${encodeURIComponent(projectId)}/split`,
+      { method: 'POST', body: JSON.stringify({ groups }) },
+    )
+    const results = Array.isArray(payload?.projects) ? payload.projects : []
+    if (results.length === 0) {
+      throw new Error('拆分接口未返回新项目，请刷新后确认结果。')
+    }
+    const firstId = results[0]?.project?.id
+    const movedCount = results.reduce((total, item) => {
+      const count = Array.isArray(item.file_ids)
+        ? item.file_ids.length
+        : Number(item.file_count)
+      return total + (Number.isFinite(count) ? count : 0)
+    }, 0)
+
+    splitOpen.value = false
+    // 切到第一个新项目，让用户立刻看到拆分结果。
+    await loadProjects(firstId)
+    setNotice(
+      'success',
+      `已拆分为 ${results.length} 个项目，移动 ${movedCount} 个文件。`,
+    )
+  } catch (error) {
+    const message = messageOf(error)
+    splitError.value = message
+    setNotice('error', message)
+  } finally {
+    splitBusy.value = false
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* 项目级自定义快捷键                                                  */
+/* ------------------------------------------------------------------ */
+
+/** 归一化项目 shortcuts：老项目没有该字段，一律按 `{}` 处理。 */
+function normalizeShortcuts(
+  source: Record<string, string> | null | undefined,
+): Record<string, string> {
+  const result: Record<string, string> = {}
+  for (const [label, combo] of Object.entries(source ?? {})) {
+    if (!label || typeof combo !== 'string') continue
+    const value = combo.trim()
+    if (!value) continue
+    result[label] = value
+  }
+  return result
+}
+
+/**
+ * 服务端未返回完整 shortcuts 时的本地推算（与服务端增量语义一致）：
+ * 先删覆盖、再写覆盖，保证 UI 与实际保存结果不背离。
+ */
+function applyShortcutPatch(
+  base: Record<string, string> | null | undefined,
+  set: Record<string, string>,
+  unset: string[],
+): Record<string, string> {
+  const next = normalizeShortcuts(base)
+  for (const label of unset) delete next[label]
+  for (const [label, combo] of Object.entries(set)) {
+    if (combo) next[label] = combo
+  }
+  return next
+}
+
+function openShortcutDialog(): void {
+  if (!currentProject.value) return
+  shortcutError.value = ''
+  shortcutOpen.value = true
+}
+
+/**
+ * 保存快捷键增量：`shortcuts_set` / `shortcuts_unset` 一起提交。
+ * 成功后用响应里的完整项目回写 `currentProject.shortcuts`（老后端缺字段时本地推算）。
+ */
+async function submitShortcuts(payload: ProjectShortcutsPatch): Promise<void> {
+  const project = currentProject.value
+  if (!project || shortcutBusy.value) return
+
+  const set = payload.shortcuts_set ?? {}
+  // unset 与 set 互斥：同一标签若既设置又被清除，以设置为准。
+  const unset = (payload.shortcuts_unset ?? []).filter(
+    (label) => !(label in set),
+  )
+  if (Object.keys(set).length === 0 && unset.length === 0) {
+    shortcutOpen.value = false
+    setNotice('info', '快捷键没有改动。')
+    return
+  }
+
+  shortcutBusy.value = true
+  shortcutError.value = ''
+  try {
+    // 快捷键按标签名校验：刚在字典卡片里新增、尚未落盘的标签必须先提交，
+    // 否则服务端会以「标签不存在」拒绝。
+    if (!(await flushDictionaryNow())) {
+      shortcutError.value = '标签/关系尚未保存成功，请稍后重试保存快捷键。'
+      return
+    }
+
+    const body: ProjectShortcutsPatch = {}
+    if (Object.keys(set).length > 0) body.shortcuts_set = set
+    if (unset.length > 0) body.shortcuts_unset = unset
+
+    const response = await apiFetch<unknown>(
+      `/projects/${encodeURIComponent(project.id)}`,
+      { method: 'PATCH', body: JSON.stringify(body) },
+    )
+    const serverPatch = extractProjectPatch(response)
+    const serverShortcuts = serverPatch?.shortcuts
+    const shortcuts = serverShortcuts
+      ? normalizeShortcuts(serverShortcuts)
+      : applyShortcutPatch(project.shortcuts, set, unset)
+
+    if (currentProject.value?.id === project.id) {
+      currentProject.value = { ...currentProject.value, shortcuts }
+    }
+    // 列表摘要同步：切回该项目时不会看到旧快捷键。
+    const index = projects.value.findIndex((item) => item.id === project.id)
+    if (index >= 0) {
+      projects.value[index] = { ...projects.value[index], shortcuts }
+    }
+
+    shortcutOpen.value = false
+    setNotice('success', '快捷键已保存。')
+  } catch (error) {
+    const message = messageOf(error)
+    shortcutError.value = message
+    setNotice('error', message)
+  } finally {
+    shortcutBusy.value = false
+  }
+}
+
+/** 切换项目时关闭这些项目级弹窗，避免草稿作用于错误的项目。 */
+watch(
+  () => currentProject.value?.id,
+  () => {
+    splitOpen.value = false
+    shortcutOpen.value = false
+    // 导入弹窗承载的是「当前项目」的上传目标，切项目/删项目后必须关闭。
+    importOpen.value = false
+  },
+)
+
+/* ------------------------------------------------------------------ */
 /* 标签与关系字典保存（300ms 防抖 + 串行 latest-wins）                  */
 /* ------------------------------------------------------------------ */
 
-function hasDictionaryPending(): boolean {
-  return (
-    dictionaryPending.labels !== undefined ||
-    dictionaryPending.relation_types !== undefined
+/** 增量载荷的四个数组字段；合并、判空、请求体构造都以此为准。 */
+const DICTIONARY_PATCH_KEYS = [
+  'labels_add',
+  'labels_remove',
+  'relation_types_add',
+  'relation_types_remove',
+] as const
+
+type DictionaryPatchKey = (typeof DICTIONARY_PATCH_KEYS)[number]
+
+/** 读取增量字段，缺省视为空数组（避免到处写 `?? []`）。 */
+function dictionaryValues(
+  patch: ProjectDictionaryPatch,
+  key: DictionaryPatchKey,
+): string[] {
+  const values = patch[key]
+  return Array.isArray(values) ? values : []
+}
+
+/** 本次增量是否包含任何一个待提交的字典变更。 */
+function patchHasChanges(patch: ProjectDictionaryPatch): boolean {
+  return DICTIONARY_PATCH_KEYS.some(
+    (key) => dictionaryValues(patch, key).length > 0,
   )
+}
+
+/** 待提交队列是否非空。 */
+function hasDictionaryPending(): boolean {
+  return patchHasChanges(dictionaryPending)
 }
 
 /** 递增令牌并清掉「已保存 → 空闲」定时器，避免旧计时器回写新状态。 */
@@ -650,24 +988,144 @@ function resetDictionarySaving(): void {
   dictionaryStatus.value = 'idle'
 }
 
-/** 增量合并：同字段以 patch 为准，未出现的字段保持原值。 */
+/**
+ * 同一字段的 add / remove 合并。
+ *
+ * 规则：add 求并集、remove 求并集；同一个值若既在 add 又在 remove 中，
+ * 以「最后一次用户操作」为准 —— 新增时从 remove 里剔除，删除时从 add 里剔除，
+ * 从而保证发出去的载荷中 add 与 remove 永远互斥。
+ */
+function mergePatchField(
+  target: ProjectDictionaryPatch,
+  patch: ProjectDictionaryPatch,
+  addKey: 'labels_add' | 'relation_types_add',
+  removeKey: 'labels_remove' | 'relation_types_remove',
+): void {
+  const add = [...dictionaryValues(target, addKey)]
+  const remove = [...dictionaryValues(target, removeKey)]
+
+  for (const value of dictionaryValues(patch, addKey)) {
+    if (!value) continue
+    const staleIndex = remove.indexOf(value)
+    if (staleIndex >= 0) remove.splice(staleIndex, 1)
+    if (!add.includes(value)) add.push(value)
+  }
+
+  for (const value of dictionaryValues(patch, removeKey)) {
+    if (!value) continue
+    const staleIndex = add.indexOf(value)
+    if (staleIndex >= 0) add.splice(staleIndex, 1)
+    if (!remove.includes(value)) remove.push(value)
+  }
+
+  target[addKey] = add
+  target[removeKey] = remove
+}
+
+/**
+ * 增量合并：同字段的 add / remove 各自求并集，互斥值以本次操作为准。
+ * `force` 一旦确认就保留，直到该批修改成功落盘。
+ */
 function mergeDictionaryPatch(
   base: ProjectDictionaryPatch,
   patch: ProjectDictionaryPatch,
 ): ProjectDictionaryPatch {
-  const next: ProjectDictionaryPatch = { ...base }
-  if (patch.labels) next.labels = [...patch.labels]
-  if (patch.relation_types) next.relation_types = [...patch.relation_types]
+  const next: ProjectDictionaryPatch = {
+    labels_add: [...dictionaryValues(base, 'labels_add')],
+    labels_remove: [...dictionaryValues(base, 'labels_remove')],
+    relation_types_add: [...dictionaryValues(base, 'relation_types_add')],
+    relation_types_remove: [...dictionaryValues(base, 'relation_types_remove')],
+    force: Boolean(base.force) || Boolean(patch.force),
+  }
+  mergePatchField(next, patch, 'labels_add', 'labels_remove')
+  mergePatchField(next, patch, 'relation_types_add', 'relation_types_remove')
   return next
 }
 
 /**
- * 卡片每次变更：先合并进待提交对象并重置 300ms 防抖。
- * 只发送真正变化过的字段，避免误覆盖另一组字典。
+ * 把一次增量应用到本地列表（与服务端语义一致：只增不隐式删）。
+ * 用于两条兜底路径：服务端未返回完整字典时的本地推算，以及排队增量的 UI 叠加。
+ */
+function applyPatchToValues(
+  values: string[],
+  patch: ProjectDictionaryPatch,
+  field: 'labels' | 'relation_types',
+): string[] {
+  const addKey: DictionaryPatchKey =
+    field === 'labels' ? 'labels_add' : 'relation_types_add'
+  const removeKey: DictionaryPatchKey =
+    field === 'labels' ? 'labels_remove' : 'relation_types_remove'
+  const removed = new Set(dictionaryValues(patch, removeKey))
+  const next = values.filter((value) => !removed.has(value))
+  for (const value of dictionaryValues(patch, addKey)) {
+    if (!next.includes(value)) next.push(value)
+  }
+  return next
+}
+
+/** 剔除空数组与 false 的 force，避免发出无意义的字段。 */
+function toDictionaryRequestBody(
+  patch: ProjectDictionaryPatch,
+): ProjectDictionaryPatch {
+  const body: ProjectDictionaryPatch = {}
+  for (const key of DICTIONARY_PATCH_KEYS) {
+    const values = dictionaryValues(patch, key)
+    if (values.length > 0) body[key] = [...values]
+  }
+  if (patch.force) body.force = true
+  return body
+}
+
+/** 本次增量里仍被标注引用的标签，用于删除前的确认与引用条数说明。 */
+function inUseLabelRemovals(
+  patch: ProjectDictionaryPatch,
+): Array<{ name: string; count: number }> {
+  const items: Array<{ name: string; count: number }> = []
+  for (const name of dictionaryValues(patch, 'labels_remove')) {
+    const count = labelUsage.value.used[name] ?? 0
+    if (count > 0) items.push({ name, count })
+  }
+  return items
+}
+
+/** 确认弹窗文案：逐条列出引用条数，并说明后果。 */
+function describeInUseRemovals(
+  items: Array<{ name: string; count: number }>,
+): string {
+  const detail = items
+    .map((item) => `「${item.name}」仍有 ${item.count} 处标注引用`)
+    .join('；')
+  return `${detail}。删除后这些标注会失去标签，正文中只显示为灰色且看不到标签名。确认删除吗？`
+}
+
+/**
+ * 卡片每次变更的入口。
+ *
+ * 删除仍被引用的标签必须先确认：这里把本次增量挂起，用户在弹窗里确认后
+ * 才带着 `force: true` 入队；取消则完全不发请求，并把卡片草稿还原。
  */
 function handleDictionarySave(patch: ProjectDictionaryPatch): void {
   if (!currentProject.value) return
-  if (!patch.labels && !patch.relation_types) return
+  if (!patchHasChanges(patch)) return
+
+  const inUse = patch.force ? [] : inUseLabelRemovals(patch)
+  if (inUse.length > 0) {
+    pendingLabelRemove.value = { patch }
+    labelRemoveMessage.value = describeInUseRemovals(inUse)
+    labelRemoveOpen.value = true
+    return
+  }
+
+  enqueueDictionaryPatch(patch)
+}
+
+/**
+ * 把增量并入待提交队列并重置 300ms 防抖。
+ * 只发送真正变化过的字段，避免误覆盖另一组字典。
+ */
+function enqueueDictionaryPatch(patch: ProjectDictionaryPatch): void {
+  if (!currentProject.value) return
+  if (!patchHasChanges(patch)) return
   dictionaryPending = mergeDictionaryPatch(dictionaryPending, patch)
   // 新的编辑使旧的「已保存」复位计时失效。
   clearDictionarySavedTimer()
@@ -677,6 +1135,33 @@ function handleDictionarySave(patch: ProjectDictionaryPatch): void {
     dictionaryDebounceTimer = null
     void flushDictionarySave()
   }, DICTIONARY_DEBOUNCE)
+}
+
+/** 用户确认删除在用标签：本次 PATCH 带 force，服务端才允许删除。 */
+function confirmRemoveInUseLabels(): void {
+  const prompt = pendingLabelRemove.value
+  pendingLabelRemove.value = null
+  labelRemoveOpen.value = false
+  if (!prompt) return
+  enqueueDictionaryPatch({ ...prompt.patch, force: true })
+}
+
+/**
+ * 弹窗关闭（取消 / Esc / 点遮罩）：本次删除不入队，
+ * 并把卡片已经乐观移除的项按原位置插回草稿，避免草稿与真实字典不一致。
+ */
+function onLabelRemoveOpenChange(open: boolean): void {
+  labelRemoveOpen.value = open
+  if (open) return
+  const prompt = pendingLabelRemove.value
+  pendingLabelRemove.value = null
+  if (!prompt) return
+  for (const name of dictionaryValues(prompt.patch, 'labels_remove')) {
+    dictionaryCardRef.value?.restoreRemoved('labels', name)
+  }
+  for (const name of dictionaryValues(prompt.patch, 'relation_types_remove')) {
+    dictionaryCardRef.value?.restoreRemoved('relation_types', name)
+  }
 }
 
 /** 成功后保持 1.5 秒「已保存」；期间若有新保存则旧计时器失效。 */
@@ -691,18 +1176,50 @@ function scheduleDictionaryIdleReset(): void {
   }, DICTIONARY_SAVED_HOLD)
 }
 
-/** 字典字段取值优先级：服务端规范化结果 > 本次提交值 > 现有值。 */
+/**
+ * 字典字段取值：服务端返回的完整数组合并结果优先；缺失时按本次增量本地推算。
+ * 注意这里不再接受「整份数组提交」，因此不存在用旧快照覆盖服务端的可能。
+ */
 function resolveDictionaryValue(
   field: 'labels' | 'relation_types',
+  values: string[],
   patch: ProjectDictionaryPatch,
-  serverPatch: Partial<Project>,
-  fallback: string[],
+  serverPatch: Partial<Project> | null,
 ): string[] {
-  const serverValue = serverPatch[field]
+  const serverValue = serverPatch?.[field]
   if (Array.isArray(serverValue)) return [...serverValue]
-  const patchValue = patch[field]
-  if (patchValue) return [...patchValue]
-  return [...fallback]
+  return applyPatchToValues(values, patch, field)
+}
+
+/**
+ * 把服务端合并结果回写到 currentProject，再把仍在排队的增量叠加到 UI 上。
+ *
+ * 叠加的意义：PATCH 返回时队列里可能已经有用户刚输入的新标签，
+ * 如果只用服务端快照整体覆盖，这些尚未落盘的标签会瞬间从卡片上消失。
+ */
+function writeBackDictionary(
+  projectId: string,
+  patch: ProjectDictionaryPatch,
+  serverPatch: Partial<Project> | null,
+): void {
+  const current = currentProject.value
+  if (!current || current.id !== projectId) return
+  const labels = resolveDictionaryValue('labels', current.labels, patch, serverPatch)
+  const relations = resolveDictionaryValue(
+    'relation_types',
+    current.relation_types,
+    patch,
+    serverPatch,
+  )
+  currentProject.value = {
+    ...current,
+    labels: applyPatchToValues(labels, dictionaryPending, 'labels'),
+    relation_types: applyPatchToValues(
+      relations,
+      dictionaryPending,
+      'relation_types',
+    ),
+  }
 }
 
 /**
@@ -712,30 +1229,25 @@ function resolveDictionaryValue(
 function applyDictionaryToSummary(
   projectId: string,
   patch: ProjectDictionaryPatch,
-  serverPatch: Partial<Project>,
+  serverPatch: Partial<Project> | null,
 ): void {
   const index = projects.value.findIndex((item) => item.id === projectId)
   if (index < 0) return
   const summary = projects.value[index]
   projects.value[index] = {
     ...summary,
-    labels: resolveDictionaryValue(
-      'labels',
-      patch,
-      serverPatch,
-      summary.labels,
-    ),
+    labels: resolveDictionaryValue('labels', summary.labels, patch, serverPatch),
     relation_types: resolveDictionaryValue(
       'relation_types',
+      summary.relation_types,
       patch,
       serverPatch,
-      summary.relation_types,
     ),
   }
 }
 
 /**
- * 串行发送字典 PATCH：
+ * 串行发送字典 PATCH（只含增量字段）：
  * - 在途时不并发，只把新变更留到当前请求结束后再发一次（latest wins）；
  * - 固定 projectId，响应回来若已切换项目则丢弃 currentProject 回写，
  *   但仍回写列表摘要，避免切回时看到旧字典；
@@ -765,35 +1277,17 @@ async function flushDictionarySave(): Promise<void> {
   try {
     const payload = await apiFetch<unknown>(
       `/projects/${encodeURIComponent(projectId)}`,
-      { method: 'PATCH', body: JSON.stringify(patch) },
+      { method: 'PATCH', body: JSON.stringify(toDictionaryRequestBody(patch)) },
     )
-    // 后端若返回了规范化后的字典，以服务端结果为准。
-    const serverPatch = extractProjectPatch(payload) ?? {}
+    // 后端返回合并后的完整项目，字典字段以服务端结果为准。
+    const serverPatch = extractProjectPatch(payload)
     if (generation !== dictionaryGeneration) {
       // 项目已切换：不碰 currentProject，但成功结果仍要回写列表摘要。
       applyDictionaryToSummary(projectId, patch, serverPatch)
       return
     }
-    const current = currentProject.value
-    if (!current || current.id !== projectId) return
 
-    const updated: Project = {
-      ...current,
-      labels: resolveDictionaryValue(
-        'labels',
-        patch,
-        serverPatch,
-        current.labels,
-      ),
-      relation_types: resolveDictionaryValue(
-        'relation_types',
-        patch,
-        serverPatch,
-        current.relation_types,
-      ),
-    }
-
-    currentProject.value = updated
+    writeBackDictionary(projectId, patch, serverPatch)
     applyDictionaryToSummary(projectId, patch, serverPatch)
     // 递增回写代数：早于本次 PATCH 发出、晚于其返回的详情快照不得覆盖本地字典。
     dictionaryRevision += 1
@@ -801,6 +1295,8 @@ async function flushDictionarySave(): Promise<void> {
     succeeded = true
     dictionaryStatus.value = 'saved'
     scheduleDictionaryIdleReset()
+    // 引用计数可能随删除/新增变化，刷新后「字典缺失」区域才会同步。
+    void refreshLabelUsage(projectId, { force: true })
   } catch (error) {
     if (generation !== dictionaryGeneration) return
     const current = currentProject.value
@@ -812,7 +1308,29 @@ async function flushDictionarySave(): Promise<void> {
     clearDictionaryDebounceTimer()
     clearDictionarySavedTimer()
     dictionaryStatus.value = 'error'
+    // 409 = 删除仍被引用的标签（多因 usage 尚未返回而没走确认弹窗）。
+    // 必须把这次删除从队列里撤回，否则整批后续标签新增都会被它一起卡住；
+    // 同时把卡片上已乐观移除的 chip 放回去，让用户看清后重新操作。
+    const rejectedRemovals =
+      error instanceof ApiError && error.status === 409
+        ? dictionaryValues(patch, 'labels_remove')
+        : []
+    if (rejectedRemovals.length > 0) {
+      const rejected = new Set(rejectedRemovals)
+      dictionaryPending = {
+        ...dictionaryPending,
+        labels_remove: dictionaryValues(dictionaryPending, 'labels_remove').filter(
+          (value) => !rejected.has(value),
+        ),
+      }
+      for (const value of rejectedRemovals) {
+        dictionaryCardRef.value?.restoreRemoved('labels', value)
+      }
+    }
+    // 409 时后端 detail 已包含每个标签的引用条数，直接展示给用户。
     setNotice('error', messageOf(error))
+    // 统计可能是旧的（或首次加载失败）才导致没有拦下确认：刷新后下一次删除会带条数确认。
+    void refreshLabelUsage(projectId, { force: true })
   } finally {
     if (generation === dictionaryGeneration) {
       dictionarySaveInFlight = false
@@ -850,6 +1368,138 @@ async function flushDictionaryNow(): Promise<boolean> {
   return dictionaryStatus.value !== 'error'
 }
 
+/* ------------------------------------------------------------------ */
+/* 标签引用统计与缺失恢复                                              */
+/* ------------------------------------------------------------------ */
+
+/** 把后端返回的 usage 归一化：只保留有限的正整数计数与去空白的标签名。 */
+function normalizeLabelUsage(payload: unknown): ProjectLabelUsage {
+  const record = asRecord(payload)
+  const usedSource = asRecord(record?.used) ?? {}
+  const used: Record<string, number> = {}
+  for (const [name, raw] of Object.entries(usedSource)) {
+    const label = name.trim()
+    const count = Number(raw)
+    if (!label || !Number.isFinite(count) || count <= 0) continue
+    used[label] = Math.floor(count)
+  }
+
+  const missingSource = record?.missing
+  const missing: string[] = []
+  for (const raw of Array.isArray(missingSource) ? missingSource : []) {
+    if (typeof raw !== 'string') continue
+    const label = raw.trim()
+    if (label && !missing.includes(label)) missing.push(label)
+  }
+
+  return { used, missing }
+}
+
+/** usage 全量扫描注释文件，最短刷新间隔：避免轮询/连续保存把它打成高频请求。 */
+const LABEL_USAGE_MIN_INTERVAL_MS = 10_000
+let labelUsageLastAt = 0
+let labelUsageLastProject = ''
+
+/**
+ * 刷新标签引用统计（供删除确认与「字典缺失」区域使用）。
+ *
+ * 竞态处理：每次请求递增令牌并固定 projectId，
+ * 只有「最新一次请求 + 仍是当前项目」的响应才允许写入状态，旧响应直接丢弃。
+ * 失败时保留上一次快照：usage 只是辅助提示，不应打断主流程。
+ *
+ * 服务端该接口需要扫描项目全部 annotations.json（国标3 量级约 60ms），
+ * 因此同一项目 10 秒内只刷新一次；字典保存/恢复等确实改变字典的操作传
+ * `force: true` 绕过节流。
+ */
+async function refreshLabelUsage(
+  projectId: string,
+  options: { force?: boolean } = {},
+): Promise<void> {
+  const now = Date.now()
+  if (
+    !options.force &&
+    labelUsageLastProject === projectId &&
+    now - labelUsageLastAt < LABEL_USAGE_MIN_INTERVAL_MS
+  ) {
+    return
+  }
+  const token = ++labelUsageToken
+  try {
+    const payload = await apiFetch<unknown>(
+      `/projects/${encodeURIComponent(projectId)}/labels/usage`,
+    )
+    if (token !== labelUsageToken) return
+    if (currentProject.value?.id !== projectId) return
+    labelUsage.value = normalizeLabelUsage(payload)
+    labelUsageLastProject = projectId
+    labelUsageLastAt = Date.now()
+  } catch {
+    // 静默失败：下一次详情加载/保存会再次尝试。
+  }
+}
+
+/** 切换或清空项目时丢弃上一个项目的引用统计。 */
+function resetLabelUsage(): void {
+  labelUsageToken += 1
+  labelUsageLastProject = ''
+  labelUsageLastAt = 0
+  labelUsage.value = { used: {}, missing: [] }
+}
+
+/** 从恢复响应中取出本次补回的标签列表，兼容 `{project: {...}}` 封装。 */
+function extractRestoredLabels(payload: unknown): string[] {
+  const record = asRecord(payload)
+  if (!record) return []
+  const nested = asRecord(record.project ?? record)
+  const value = (nested?.restored ?? record.restored) as unknown
+  if (!Array.isArray(value)) return []
+  const restored: string[] = []
+  for (const raw of value) {
+    if (typeof raw !== 'string') continue
+    const label = raw.trim()
+    if (label && !restored.includes(label)) restored.push(label)
+  }
+  return restored
+}
+
+/**
+ * 把「被标注引用但字典缺失」的标签补回项目字典。
+ * 成功后同步项目对象与列表摘要，并刷新引用统计（missing 变空、卡片恢复区消失）。
+ */
+async function restoreMissingLabels(): Promise<void> {
+  const project = currentProject.value
+  if (!project || restoringLabels.value) return
+  const projectId = project.id
+  restoringLabels.value = true
+  try {
+    const payload = await apiFetch<LabelRestorePayload>(
+      `/projects/${encodeURIComponent(projectId)}/labels/restore`,
+      { method: 'POST' },
+    )
+    const serverPatch = extractProjectPatch(payload)
+    const restored = extractRestoredLabels(payload)
+
+    if (currentProject.value?.id === projectId) {
+      writeBackDictionary(projectId, {}, serverPatch)
+      // 服务端已把缺失标签补回字典，早于本次响应的详情快照不得覆盖它。
+      dictionaryRevision += 1
+    }
+    applyDictionaryToSummary(projectId, {}, serverPatch)
+    await refreshLabelUsage(projectId, { force: true })
+
+    setNotice(
+      'success',
+      restored.length > 0
+        ? `已恢复 ${restored.length} 个标签。`
+        : '字典中没有可恢复的标签。',
+    )
+  } catch (error) {
+    setNotice('error', messageOf(error))
+  } finally {
+    restoringLabels.value = false
+  }
+}
+
 /** 返回是否成功；确认交互由 ConfirmDialog 负责，成功后关闭弹窗。 */
 async function deleteProject(): Promise<boolean> {
   const project = currentProject.value
@@ -864,6 +1514,7 @@ async function deleteProject(): Promise<boolean> {
     deleteOpen.value = false
     // 项目已不存在：丢弃字典保存队列与状态。
     resetDictionarySaving()
+    resetLabelUsage()
     currentProject.value = null
     files.value = []
     selectedFile.value = null
@@ -1202,6 +1853,17 @@ async function retryFile(file: MixedFile): Promise<void> {
   }
 }
 
+async function reconvertSelectedFile(): Promise<void> {
+  const file = selectedFile.value
+  if (!file) return
+  const confirmed = window.confirm(
+    `重新 OCR 转换会清空「${file.name}」现有的实体/关系标注和图表记录，且无法恢复。\n\n` +
+      '只在 Markdown 乱码（PDF 文本层编码异常）时使用。是否继续？',
+  )
+  if (!confirmed) return
+  await retryFile(file)
+}
+
 /* ------------------------------------------------------------------ */
 /* 轮询转换状态                                                        */
 /* ------------------------------------------------------------------ */
@@ -1372,6 +2034,39 @@ async function exportProject(): Promise<void> {
   }
 }
 
+/* ------------------------------------------------------------------ */
+/* 导出 Excel 表单（可多选项目）                                       */
+/* ------------------------------------------------------------------ */
+
+/** 顶栏入口：没有项目时直接提示，避免打开空弹窗。 */
+function openExcelDialog(): void {
+  if (projects.value.length === 0) {
+    setNotice('error', '请先新建项目。')
+    return
+  }
+  // 每次打开都清掉上一次的失败信息，避免旧错误误导本次操作。
+  excelError.value = ''
+  excelOpen.value = true
+}
+
+/** 提交所选项目：成功关闭弹窗，失败保留弹窗并就地展示后端中文错误。 */
+async function submitExcelExport(projectIds: string[]): Promise<void> {
+  if (projectIds.length === 0 || exportingExcel.value) return
+  exportingExcel.value = true
+  excelError.value = ''
+  try {
+    await downloadProjectExcel(projectIds)
+    setNotice('success', '正在下载所选项目的标注明细 Excel。')
+    excelOpen.value = false
+  } catch (error) {
+    const message = messageOf(error)
+    excelError.value = message
+    setNotice('error', message)
+  } finally {
+    exportingExcel.value = false
+  }
+}
+
 onMounted(() => {
   void loadProjects()
 })
@@ -1382,8 +2077,9 @@ onUnmounted(() => {
   // 卸载前清掉防抖窗口；已有待提交修改尽力发出，不静默丢弃。
   clearDictionaryDebounceTimer()
   if (hasDictionaryPending()) void flushDictionarySave()
-  // 组件已卸载，后续状态回写无害；只需清掉复位定时器。
+  // 组件已卸载，后续状态回写无害；只需清掉复位定时器与 usage 令牌。
   clearDictionarySavedTimer()
+  resetLabelUsage()
   if (noticeTimer !== null) {
     window.clearTimeout(noticeTimer)
     noticeTimer = null
@@ -1399,35 +2095,48 @@ onUnmounted(() => {
       :selected-file="selectedFile"
       :file-status-label="fileStatusLabel"
       :exporting="exporting"
+      :excel-exporting="exportingExcel"
       :project-switch-disabled="importing || uploading || scanBusy || savingProject"
+      :split-disabled="files.length === 0"
       @select-project="selectProject"
       @create="openCreateSettings"
       @settings="openProjectSettings"
+      @split-project="openSplitDialog"
       @delete-project="openDeleteDialog"
+      @import="openImportDialog"
+      @reconvert="openReconvertDialog"
       @export="exportProject"
-    />
+      @export-excel="openExcelDialog"
+    >
+      <!--
+        工作区挂载点：MixedWorkspace 通过 <Teleport to="#mw-toolbar-slot"> 把文件头搬进来。
+        该节点必须常驻（AppHeader 先于 MixedWorkspace 渲染），否则 Teleport 找不到宿主。
+      -->
+      <template #workspace>
+        <div id="mw-toolbar-slot" class="mx-workspace-slot"></div>
+      </template>
+    </AppHeader>
 
     <div class="mx-body">
       <aside class="project-sidebar" aria-label="文件">
         <ProjectDictionaryCard
           v-if="currentProject"
+          ref="dictionaryCardRef"
           :project="currentProject"
           :status="dictionaryStatus"
+          :missing-labels="labelUsage.missing"
+          :usage="labelUsage.used"
+          :restoring="restoringLabels"
+          :shortcuts="currentProject.shortcuts ?? {}"
           @save="handleDictionarySave"
+          @restore="restoreMissingLabels"
+          @edit-shortcuts="openShortcutDialog"
         />
 
-        <UploadPanel
-          :uploading="uploading"
-          :disabled="!currentProject"
-          :importing="importing"
-          :import-progress="importProgress"
-          :batch-summary="batchSummary"
-          @upload="handleUpload"
-          @upload-batch="handleBatchImport"
-          @scanning-change="onScanningChange"
-          @invalid="onInvalidUpload"
-        />
-
+        <!--
+          上传面板已移入顶栏「导入」弹窗：侧栏只留「字典 + 文件列表」，
+          文件列表因此拿到全部剩余高度，不再被上传区挤压。
+        -->
         <FileList
           :files="files"
           :selected-id="selectedFile?.id ?? null"
@@ -1504,8 +2213,11 @@ onUnmounted(() => {
             :file="selectedFile"
             :labels="currentProject.labels"
             :relation-types="currentProject.relation_types"
+            :shortcuts="currentProject.shortcuts ?? {}"
             @saved="refreshSelectedFile"
             @refresh="refreshSelectedFile"
+            @edit-shortcuts="openShortcutDialog"
+            @reconvert="reconvertSelectedFile"
           />
           <EmptyState
             v-else
@@ -1536,6 +2248,80 @@ onUnmounted(() => {
       :busy="savingProject"
       :error="deleteError"
       @confirm="confirmDeleteProject"
+    />
+
+    <!--
+      删除仍被标注引用的标签：先说明引用条数，确认后才带 force 重发 PATCH。
+      取消通过 update:open 触发，父组件据此把卡片草稿还原。
+    -->
+    <ConfirmDialog
+      :open="labelRemoveOpen"
+      title="删除仍被引用的标签？"
+      :message="labelRemoveMessage"
+      confirm-label="仍然删除"
+      danger
+      @update:open="onLabelRemoveOpenChange"
+      @confirm="confirmRemoveInUseLabels"
+    />
+
+    <!--
+      顶栏「导入」弹窗：上传逻辑仍由本组件持有（uploading / importing /
+      importProgress / batchSummary 与三个处理函数原样透传），
+      弹窗只负责外壳，关闭窗口不会中断上传与后台转换排队。
+    -->
+    <ImportDialog
+      :open="importOpen"
+      :uploading="uploading"
+      :disabled="!currentProject"
+      :importing="importing"
+      :import-progress="importProgress"
+      :batch-summary="batchSummary"
+      @update:open="onImportOpenChange"
+      @upload="handleUpload"
+      @upload-batch="handleBatchImport"
+      @scanning-change="onScanningChange"
+      @invalid="onInvalidUpload"
+    />
+
+    <ExportExcelDialog
+      :open="excelOpen"
+      :projects="projects"
+      :current-project-id="currentProject?.id ?? null"
+      :busy="exportingExcel"
+      :error="excelError"
+      @update:open="excelOpen = $event"
+      @submit="submitExcelExport"
+    />
+
+    <!-- 按文件序号区间拆分：草稿与校验都在弹窗内部，父组件只负责提交与切项目。 -->
+    <SplitProjectDialog
+      v-model:open="splitOpen"
+      :project-name="currentProject?.name ?? ''"
+      :files="files"
+      :busy="splitBusy"
+      :error="splitError"
+      @submit="submitSplit"
+    />
+
+    <!-- 重新 OCR：参数设置弹窗（按当前选中文件生效）。 -->
+    <ReconvertDialog
+      :open="reconvertOpen"
+      :file-name="selectedFile?.name ?? ''"
+      :page-count="selectedFile?.page_count ?? 0"
+      :busy="reconvertBusy"
+      :error="reconvertError"
+      @close="reconvertOpen = false"
+      @submit="submitReconvert"
+    />
+
+    <!-- 项目级自定义快捷键：保存走 PATCH 的 shortcuts_set / shortcuts_unset 增量。 -->
+    <ShortcutSettingsDialog
+      v-model:open="shortcutOpen"
+      :labels="currentProject?.labels ?? []"
+      :shortcuts="currentProject?.shortcuts ?? {}"
+      :busy="shortcutBusy"
+      :error="shortcutError"
+      @save="submitShortcuts"
     />
   </div>
 </template>

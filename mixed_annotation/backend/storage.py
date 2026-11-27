@@ -16,10 +16,11 @@ import threading
 import time
 import uuid
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, Iterable
 
 from config import PROJECTS_DIR, PROJECTS_INDEX_PATH
-from errors import BadRequestError, NotFoundError, ServiceError
+from errors import BadRequestError, ConflictError, NotFoundError, ServiceError
+from services.shortcut_service import merge_shortcuts, normalize_overrides
 from utils import ensure_within, utc_now
 
 logger = logging.getLogger(__name__)
@@ -218,6 +219,13 @@ def _sanitize_figure_asset_stem(caption: str, figure_id: str) -> str:
     return _sanitize_component_name(caption, fallback)
 
 
+def _file_label(meta: dict[str, Any]) -> str:
+    """文件在错误提示里的展示名：优先用户可见文件名，退化到 id。"""
+
+    name = str(meta.get("name") or "").strip()
+    return name or str(meta.get("id") or "")
+
+
 def _dedupe_dir_name(base: str, taken: set[str]) -> str:
     """在 ``taken``（已 casefold 的名称集合）中为 ``base`` 找到唯一名称。"""
 
@@ -289,9 +297,21 @@ def _project_dir(project_id: str) -> Path:
 
 
 def _public_project(record: dict[str, Any]) -> dict[str, Any]:
-    """API 输出不暴露内部实现的 ``dir_name``，保持既有响应结构。"""
+    """API 输出不暴露内部实现的 ``dir_name``，保持既有响应结构。
 
-    return {key: value for key, value in record.items() if key != "dir_name"}
+    ``shortcuts`` 在这里补齐默认值：旧项目的 ``project.json`` 没有该字段，
+    对外一律表现为 ``{}``（前端因此不需要兼容 ``undefined``）。
+    """
+
+    result = {key: value for key, value in record.items() if key != "dir_name"}
+    result["shortcuts"] = _project_shortcuts(record)
+    return result
+
+
+def _project_shortcuts(record: dict[str, Any]) -> dict[str, str]:
+    """读取项目级快捷键覆盖项；缺失/脏数据一律收敛为空字典。"""
+
+    return normalize_overrides(record.get("shortcuts"))
 
 
 def _cache_file_dir(file_id: str, project_id: str, dir_name: str) -> None:
@@ -405,14 +425,25 @@ def get_project(project_id: str) -> dict[str, Any]:
 
 
 def create_project(
-    name: str, labels: list[str], relation_types: list[str]
+    name: str,
+    labels: list[str],
+    relation_types: list[str],
+    shortcuts: dict[str, str] | None = None,
 ) -> dict[str, Any]:
+    """创建项目。
+
+    ``shortcuts`` 为项目级快捷键覆盖项（只存显式设置过的标签），默认
+    ``{}``：既保持旧调用方 ``create_project(name, labels, relation_types)``
+    不变，也让拆分项目时可以整份继承源项目的快捷键（已在源项目内校验过）。
+    """
+
     now = utc_now()
     project = {
         "id": str(uuid.uuid4()),
         "name": name,
         "labels": labels,
         "relation_types": relation_types,
+        "shortcuts": normalize_overrides(shortcuts),
         "created_at": now,
         "updated_at": now,
     }
@@ -462,7 +493,7 @@ def update_project(project_id: str, changes: dict[str, Any]) -> dict[str, Any]:
                     ) from exc
                 new_dir_name = candidate
 
-        for field in ("name", "labels", "relation_types"):
+        for field in ("name", "labels", "relation_types", "shortcuts"):
             if field in changes and changes[field] is not None:
                 project[field] = changes[field]
         project["updated_at"] = utc_now()
@@ -504,6 +535,248 @@ def update_project(project_id: str, changes: dict[str, Any]) -> dict[str, Any]:
     return project
 
 
+# ---------------------------------------------------------------------------
+# 项目字典（实体标签 / 关系类型）引用统计与增量合并
+# ---------------------------------------------------------------------------
+#
+# 设计要点：
+#
+# 1. 字典是多人共享的元数据，PATCH 语义改为「增量」：旧前端的整份数组只当
+#    追加项求并集，删除必须显式声明。这样即使三方各持旧快照也不会互相抹掉。
+# 2. 只读统计与写操作拆开：``project_label_usage`` 是纯扫描，删除冲突判定
+#    复用它，避免在每次追加标签时都去读一遍全部 annotations.json（大项目
+#    上百份标注文件，无谓 IO 会拖慢保存）。
+# 3. 扫描不修改任何数据文件，损坏/缺失的 annotations.json 直接跳过：字典
+#    维护不能因为一份坏文件而整体失败。
+
+
+def _clean_names(values: Iterable[Any]) -> list[str]:
+    """去首尾空白、去重并保持顺序；非字符串按字符串处理，不抛异常。
+
+    路由层的 ``normalize_string_list`` 已完成类型/长度校验并返回 422，这里
+    只是数据层兜底：历史 ``project.json`` 可能含脏数据，合并过程不能因此 500。
+    """
+
+    result: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        item = (value if isinstance(value, str) else str(value or "")).strip()
+        if not item or item in seen:
+            continue
+        seen.add(item)
+        result.append(item)
+    return result
+
+
+def _dictionary_field(project: dict[str, Any], key: str) -> list[str]:
+    """读取项目字典字段并清洗；非列表（历史脏数据）视为空字典。"""
+
+    value = project.get(key)
+    if not isinstance(value, (list, tuple)):
+        return []
+    return _clean_names(value)
+
+
+def _merge_dictionary(
+    base: Iterable[str],
+    additions: Iterable[str],
+    removals: Iterable[str],
+) -> list[str]:
+    """合并字典：保留现有顺序，先删除再按传入顺序把新项追加到末尾。"""
+
+    removed = set(removals)
+    result = [item for item in base if item not in removed]
+    seen = set(result)
+    for item in additions:
+        if item not in seen:
+            seen.add(item)
+            result.append(item)
+    return result
+
+
+def _sort_label_counts(usage: dict[str, int]) -> list[tuple[str, int]]:
+    """按引用数降序、其次标签名排序，保证同一份数据每次输出顺序稳定。"""
+
+    return sorted(usage.items(), key=lambda item: (-item[1], item[0]))
+
+
+def _collect_label_counts(record: Any, counter: dict[str, int]) -> None:
+    """累计单份 annotations.json 的实体标签与段落标签引用次数。"""
+
+    if not isinstance(record, dict):
+        return
+    for key in ("spans", "paragraphs"):
+        for item in _dict_list(record, key):
+            label = item.get("label")
+            if not isinstance(label, str):
+                continue
+            name = label.strip()
+            if name:
+                counter[name] = counter.get(name, 0) + 1
+
+
+def project_label_usage(project_id: str) -> dict[str, int]:
+    """统计项目内被标注引用的标签及次数：``{标签名: 引用条数}``。
+
+    覆盖 ``spans[].label``（实体）与 ``paragraphs[].label``（段落）；缺失、
+    不可读或格式损坏的 annotations.json 跳过，不影响其余文件统计。
+    目录解析走 ``_project_dir``，因此项目改名后依然能定位到数据。
+    """
+
+    with _LOCK:
+        project = get_project(project_id)  # 同时校验项目存在
+        files_dir = _project_dir(project["id"]) / "files"
+        counter: dict[str, int] = {}
+        if not files_dir.is_dir():
+            return counter
+        for child in sorted(files_dir.iterdir(), key=lambda path: path.name):
+            if not child.is_dir():
+                continue
+            annotation_path = child / "annotations.json"
+            if not annotation_path.is_file():
+                continue
+            try:
+                data = _read_json(annotation_path, None)
+            except (ServiceError, OSError):
+                # 损坏/被占用不影响字典维护，按契约跳过。
+                logger.warning("标签统计跳过无法读取的标注：%s", annotation_path)
+                continue
+            _collect_label_counts(data, counter)
+        return counter
+
+
+def project_label_usage_report(project_id: str) -> dict[str, Any]:
+    """``GET /labels/usage`` 的响应体：全部引用计数 + 字典缺失标签。
+
+    ``missing`` 只含被引用但不在字典里的标签，排序与 ``restored`` 一致
+    （引用数降序，其次标签名），便于前端按优先级展示与恢复。
+    """
+
+    with _LOCK:
+        project = get_project(project_id)
+        ordered = dict(_sort_label_counts(project_label_usage(project["id"])))
+        known = set(_dictionary_field(project, "labels"))
+        missing = [label for label in ordered if label not in known]
+    return {"used": ordered, "missing": missing}
+
+
+def restore_missing_labels(project_id: str) -> dict[str, Any]:
+    """把「被引用但字典缺失」的标签补回字典（只增不减）。
+
+    返回 ``{"project": 完整项目, "restored": [本次补回的标签]}``；没有缺失
+    标签时不写盘，保持 ``updated_at`` 与文件顺序不变。
+    """
+
+    with _LOCK:
+        project = get_project(project_id)
+        pid = project["id"]
+        missing = project_label_usage_report(pid)["missing"]
+        if not missing:
+            return {"project": project, "restored": []}
+        merged = _merge_dictionary(
+            _dictionary_field(project, "labels"), missing, ()
+        )
+        updated = update_project(pid, {"labels": merged})
+        return {"project": updated, "restored": list(missing)}
+
+
+def _label_removal_conflict_detail(entries: Iterable[tuple[str, int]]) -> str:
+    """生成 409 中文提示，包含每个被引用标签的引用条数。"""
+
+    ordered = sorted(entries, key=lambda item: (-item[1], item[0]))
+    listed = "、".join(f"「{label}」{count} 处" for label, count in ordered)
+    return (
+        f"标签{listed} 仍被标注引用，删除后这些标注将失去标签。"
+        "请先调整标注，或确认后强制删除。"
+    )
+
+
+def update_project_dictionary(
+    project_id: str,
+    *,
+    name: str | None = None,
+    labels_add: Iterable[str] = (),
+    labels_remove: Iterable[str] = (),
+    relation_types_add: Iterable[str] = (),
+    relation_types_remove: Iterable[str] = (),
+    shortcuts_set: dict[str, str] | None = None,
+    shortcuts_unset: Iterable[str] = (),
+    force: bool = False,
+) -> dict[str, Any]:
+    """增量合并项目字典，一次加锁内完成，只落盘一次。
+
+    - ``labels_add`` / ``labels``（旧字段）一律按追加处理，绝不隐式删除；
+    - 删除只认 ``labels_remove`` / ``relation_types_remove``；同一标签同时
+      出现在增删两侧时按「新增」处理（新增是非破坏性操作）；
+    - 删除仍被标注引用的实体标签时，``force=False`` 抛 ``ConflictError``(409)
+      且不写入任何文件；``force=True`` 才真正删除；
+    - 关系类型不做引用校验：``relations[].type`` 不参与字典冲突判定，
+      避免历史脏数据把关系维护彻底卡死；
+    - 快捷键覆盖项在**合并后的字典**上校验：``shortcuts_set`` 里的标签必须
+      存在（否则 400），有效快捷键冲突返回 409；``labels_remove`` 会同步
+      清掉被删标签的覆盖项。快捷键相关校验只在本次请求真的动了字典删除或
+      快捷键时才执行，避免历史项目因为存量数据被无关 PATCH 卡住。
+    """
+
+    with _LOCK:
+        project = get_project(project_id)
+        pid = project["id"]
+        labels = _dictionary_field(project, "labels")
+        relation_types = _dictionary_field(project, "relation_types")
+        shortcuts = _project_shortcuts(project)
+
+        add_labels = _clean_names(labels_add)
+        add_relations = _clean_names(relation_types_add)
+        # 增删重叠时保留（按新增处理），只在「确实要删掉已有项」时才判定冲突。
+        add_label_set = set(add_labels)
+        add_relation_set = set(add_relations)
+        remove_labels = {
+            label for label in _clean_names(labels_remove) if label not in add_label_set
+        }
+        remove_relations = {
+            label
+            for label in _clean_names(relation_types_remove)
+            if label not in add_relation_set
+        }
+
+        if remove_labels and not force:
+            usage = project_label_usage(pid)
+            conflict = [
+                (label, usage[label])
+                for label in remove_labels
+                if usage.get(label, 0) > 0
+            ]
+            if conflict:
+                raise ConflictError(_label_removal_conflict_detail(conflict))
+
+        new_labels = _merge_dictionary(labels, add_labels, remove_labels)
+        new_relations = _merge_dictionary(
+            relation_types, add_relations, remove_relations
+        )
+
+        changes: dict[str, Any] = {}
+        if name is not None:
+            changes["name"] = name
+        if new_labels != labels:
+            changes["labels"] = new_labels
+        if new_relations != relation_types:
+            changes["relation_types"] = new_relations
+
+        # 快捷键：只有「字典有删除」或「显式提交快捷键」时才重新计算，
+        # 保证没动字典的 PATCH 不会因为存量数据被额外校验/改写成 409。
+        if shortcuts_set or shortcuts_unset or remove_labels:
+            new_shortcuts = merge_shortcuts(
+                labels=new_labels,
+                current=shortcuts,
+                set_items=shortcuts_set or {},
+                unset_labels=shortcuts_unset,
+                removed_labels=remove_labels,
+            )
+            if new_shortcuts != shortcuts:
+                changes["shortcuts"] = new_shortcuts
+        return update_project(pid, changes)
+
+
 def delete_project(project_id: str) -> None:
     with _LOCK:
         project = get_project(project_id)
@@ -516,6 +789,221 @@ def delete_project(project_id: str) -> None:
         _atomic_write_json(PROJECTS_INDEX_PATH, index)
         _forget_project_file_dirs(project["id"])
         shutil.rmtree(project_dir, ignore_errors=True)
+
+
+# ---------------------------------------------------------------------------
+# 项目拆分（按文件序号区间）
+# ---------------------------------------------------------------------------
+#
+# 契约：docs/项目拆分与自定义快捷键.md 第 1 节。
+#
+# 设计要点：
+#
+# 1. 序号基于 ``list_files()`` 的顺序（created_at 倒序、queue_seq 兜底）并
+#    排除 ``uploading``，与 ``GET /projects/{id}`` 返回的 files 完全一致，
+#    前端因此不需要再做一次排序映射。
+# 2. 文件是「移动」而不是复制：整个文件目录 rename 到目标项目，文件 id 不变，
+#    annotations.json / blocks.json / assets / markdown 全部原样带走。
+# 3. 先校验再动手：全部分组校验通过后才创建项目、才开始移动文件，避免留下
+#    半成品项目。
+# 4. 强事务性：任何一步失败都回滚（已移动文件移回源项目、已创建项目删除），
+#    并抛出中文 ``ServiceError``；回滚步骤自身的失败只记日志，不掩盖原始异常。
+
+_SPLIT_MAX_GROUPS = 50
+_SPLIT_NAME_MAX_LEN = 120
+# 正在转换的文件由队列 worker 持续写入，移动会让 worker 写到旧路径上。
+_SPLIT_BLOCKING_STATUSES = frozenset({"converting"})
+
+
+def _plan_split_groups(
+    groups: Iterable[Any], files: list[dict[str, Any]]
+) -> list[tuple[str, list[dict[str, Any]]]]:
+    """校验分组并展开为 ``[(新项目名, 该组文件元数据列表)]``（保持提交顺序）。
+
+    全部校验失败都抛 ``BadRequestError``(400) 且不产生任何副作用。
+    """
+
+    items = list(groups or [])
+    if not items:
+        raise BadRequestError("拆分分组不能为空，请至少添加一组文件区间")
+    if len(items) > _SPLIT_MAX_GROUPS:
+        raise BadRequestError(
+            f"拆分分组最多 {_SPLIT_MAX_GROUPS} 组，请分多次拆分"
+        )
+    total = len(files)
+    if total == 0:
+        raise BadRequestError("项目内没有可拆分的文件")
+
+    seen_names: set[str] = set()
+    ranges: list[tuple[int, int, str]] = []
+    for order, raw in enumerate(items, start=1):
+        group = raw if isinstance(raw, dict) else {}
+        name = str(group.get("name") or "").strip()
+        if not name:
+            raise BadRequestError(f"第 {order} 组的新项目名称不能为空")
+        if len(name) > _SPLIT_NAME_MAX_LEN:
+            raise BadRequestError(
+                f"第 {order} 组的新项目名称过长，最多 {_SPLIT_NAME_MAX_LEN} 个字符"
+            )
+        key = name.casefold()
+        if key in seen_names:
+            raise BadRequestError(
+                f"第 {order} 组的新项目名称「{name}」与本次提交的其他组重复"
+            )
+        seen_names.add(key)
+
+        start = group.get("start")
+        end = group.get("end")
+        if (
+            isinstance(start, bool)
+            or isinstance(end, bool)
+            or not isinstance(start, int)
+            or not isinstance(end, int)
+        ):
+            raise BadRequestError(
+                f"第 {order} 组（「{name}」）的起始/结束序号必须是整数"
+            )
+        if start < 1 or end > total or start > end:
+            raise BadRequestError(
+                f"第 {order} 组（「{name}」）的文件序号必须在 1–{total} 之间，"
+                "且起始序号不大于结束序号"
+            )
+        ranges.append((start, end, name))
+
+    # 重叠判定在按起点排序后的副本上做：提交顺序可以任意。
+    ordered = sorted(ranges, key=lambda item: (item[0], item[1]))
+    for previous, current in zip(ordered, ordered[1:]):
+        if current[0] <= previous[1]:
+            raise BadRequestError(
+                f"拆分区间重叠：「{previous[2]}」{previous[0]}–{previous[1]} 与 "
+                f"「{current[2]}」{current[0]}–{current[1]} 存在交叉，请调整后重试"
+            )
+
+    return [(name, files[start - 1 : end]) for start, end, name in ranges]
+
+
+def _rollback_split(
+    created_projects: list[dict[str, Any]],
+    moved_files: list[str],
+    source_project_id: str,
+) -> bool:
+    """拆分失败回滚，返回「是否已完全回滚」。
+
+    - 先把文件移回源项目（逆序），再删除新建项目；顺序不能颠倒：
+      文件目录的定位依赖 ``meta.project_id`` 指向的项目目录仍然存在。
+    - 只要有任何一个文件移不回去，就**保留新建项目不删除**：文件数据还在
+      新建项目目录里，删项目等于删数据。此时返回 ``False``，由调用方在
+      ``detail`` 里提示用户手动检查。
+    - 单个回滚步骤失败只记日志，尽最大努力恢复其余部分。
+    """
+
+    failures = 0
+    for file_id in reversed(moved_files):
+        try:
+            move_file_to_project(file_id, source_project_id)
+        except Exception:
+            failures += 1
+            logger.exception("拆分回滚：文件移回源项目失败：%s", file_id)
+    if failures:
+        logger.error(
+            "拆分回滚未能完成：%s 个文件仍留在新建项目中，已保留这些项目以免丢失数据",
+            failures,
+        )
+        return False
+    for project in reversed(created_projects):
+        try:
+            delete_project(str(project["id"]))
+        except Exception:
+            logger.exception("拆分回滚：删除新建项目失败：%s", project.get("id"))
+    return True
+
+
+def split_project(project_id: str, groups: Iterable[Any]) -> dict[str, Any]:
+    """按文件序号区间把项目拆成多个新项目（文件移动，源项目保留）。
+
+    返回 ``{"projects": [{project, file_count, file_ids}], "source_project"}``，
+    与接口契约一致。全流程持有 ``_LOCK``：拆分期间不会有其它请求读到
+    「文件已移走但索引还没更新」的中间状态。
+    """
+
+    with _LOCK:
+        source = get_project(project_id)
+        pid = source["id"]
+        # 与 GET /projects/{id} 完全一致的文件顺序与可见性。
+        files = [
+            meta
+            for meta in list_files(pid)
+            if meta.get("status") != "uploading"
+            and isinstance(meta.get("id"), str)
+            and meta.get("id")
+        ]
+        plan = _plan_split_groups(groups, files)
+
+        blocking = [
+            _file_label(meta)
+            for _, group_files in plan
+            for meta in group_files
+            if str(meta.get("status") or "") in _SPLIT_BLOCKING_STATUSES
+        ]
+        if blocking:
+            listed = "、".join(f"「{name}」" for name in blocking)
+            raise ConflictError(
+                f"文件{listed}正在转换，移动会中断识别。"
+                "请等待转换结束或取消转换后再拆分。"
+            )
+
+        # 新项目全量继承字典与快捷键；源项目本身不被修改。
+        inherited_labels = list(_dictionary_field(source, "labels"))
+        inherited_relations = list(_dictionary_field(source, "relation_types"))
+        inherited_shortcuts = _project_shortcuts(source)
+
+        created: list[dict[str, Any]] = []
+        moved: list[str] = []
+        results: list[dict[str, Any]] = []
+        try:
+            for name, _ in plan:
+                created.append(
+                    create_project(
+                        name,
+                        list(inherited_labels),
+                        list(inherited_relations),
+                        shortcuts=dict(inherited_shortcuts),
+                    )
+                )
+            for project, (_, group_files) in zip(created, plan):
+                file_ids = [str(meta["id"]) for meta in group_files]
+                for file_id in file_ids:
+                    move_file_to_project(file_id, str(project["id"]))
+                    moved.append(file_id)
+                results.append(
+                    {
+                        "project": project,
+                        "file_count": len(file_ids),
+                        "file_ids": file_ids,
+                    }
+                )
+        except ServiceError as exc:
+            if _rollback_split(created, moved, pid):
+                raise
+            raise ServiceError(
+                500,
+                f"{exc.detail}；部分文件未能回滚，已保留新建项目以免丢失数据，"
+                "请手动检查后整理",
+            ) from exc
+        except Exception as exc:
+            fully_rolled_back = _rollback_split(created, moved, pid)
+            logger.exception("项目拆分失败：%s", pid)
+            if fully_rolled_back:
+                raise ServiceError(
+                    500, "拆分项目失败，已回滚全部改动，请稍后重试"
+                ) from exc
+            raise ServiceError(
+                500,
+                "拆分项目失败，部分文件未能回滚，已保留新建项目以免丢失数据，"
+                "请手动检查后整理",
+            ) from exc
+
+        return {"projects": results, "source_project": get_project(pid)}
 
 
 # ---------------------------------------------------------------------------
@@ -833,6 +1321,87 @@ def file_dir(file_meta: dict[str, Any]) -> Path:
             _cache_file_dir(fid, pid, dir_name)
             return candidate
     return _file_dir(pid, fid)
+
+
+def move_file_to_project(file_id: str, target_project_id: str) -> dict[str, Any]:
+    """把文件（整个目录）移动到另一个项目，返回新的文件元数据。
+
+    设计要点：
+
+    - **移动不复制**：``files/<目录名>`` 整体 rename，``annotations.json``、
+      ``blocks.json``、``assets/``、``markdown/`` 全部随目录迁移，文件 id
+      保持不变，因此标注、图表资产与导出链接都不失效；
+    - ``meta.json`` 的 ``project_id`` / ``dir_name`` / ``updated_at`` 同步更新，
+      目标项目内目录名冲突时按 ``_dedupe_dir_name`` 追加 `` (2)`` 后缀；
+    - 目录 rename 成功但元数据写入失败时回滚 rename，避免目录与 meta 不一致；
+    - ``_FILE_DIR_CACHE`` 同步刷新，移动后按 id 访问无需再扫描目录；
+    - 正在转换/上传的文件拒绝移动：worker 会往旧路径写结果。
+    """
+
+    with _LOCK:
+        meta = get_file(file_id)
+        fid = str(meta["id"])
+        source_pid = str(meta.get("project_id") or "")
+        target = get_project(target_project_id)
+        target_pid = str(target["id"])
+        if source_pid == target_pid:
+            return meta
+
+        status = str(meta.get("status") or "")
+        if status in {"uploading", "converting"}:
+            action = "上传" if status == "uploading" else "转换"
+            raise ConflictError(
+                f"文件「{_file_label(meta)}」正在{action}，暂时无法移动"
+            )
+
+        source_dir = file_dir(meta)
+        if not source_dir.is_dir():
+            raise ServiceError(
+                500, f"文件「{_file_label(meta)}」目录不存在，无法移动"
+            )
+
+        files_dir = _project_dir(target_pid) / "files"
+        try:
+            files_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise ServiceError(500, "目标项目文件目录不可用，无法移动文件") from exc
+
+        # 目录名优先沿用当前名称（已清洗、已去重），旧 UUID 布局则按文件名重建。
+        existing = str(meta.get("dir_name") or "").strip()
+        if existing and existing != fid:
+            base = existing
+        else:
+            base = _sanitize_file_dir_name(
+                Path(str(meta.get("name") or "")).stem, fid
+            )
+        dir_name = _dedupe_dir_name(base, _taken_file_dir_names(files_dir))
+        target_dir = files_dir / dir_name
+
+        try:
+            _rename_dir(source_dir, target_dir)
+        except OSError as exc:
+            raise ServiceError(
+                500,
+                f"移动文件「{_file_label(meta)}」失败，"
+                "请关闭占用该目录的程序后重试",
+            ) from exc
+
+        moved = dict(meta)
+        moved["project_id"] = target_pid
+        moved["dir_name"] = dir_name
+        moved["updated_at"] = utc_now()
+        try:
+            _atomic_write_json(target_dir / "meta.json", moved)
+        except BaseException:
+            try:
+                _rename_dir(target_dir, source_dir)
+            except OSError:
+                logger.exception(
+                    "回滚文件目录移动失败：%s -> %s", target_dir, source_dir
+                )
+            raise
+        _cache_file_dir(fid, target_pid, dir_name)
+        return moved
 
 
 def source_path(file_meta: dict[str, Any]) -> Path:

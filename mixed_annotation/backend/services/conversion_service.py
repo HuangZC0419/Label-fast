@@ -356,6 +356,7 @@ async def _run_conversion(
                 enable_table=bool(worker_options["enable_table"]),
                 enable_formula=bool(worker_options["enable_formula"]),
                 dpi=int(worker_options["dpi"]),
+                parse_method=str(worker_options.get("parse_method") or "auto"),
             )
         except OcrWorkerError as exc:
             await _fail_if_current(file_id, token, _short(exc))
@@ -523,6 +524,7 @@ async def start_conversion(
     reset_results: bool,
     filename: str,
     content_type: str,
+    parse_method: str = "auto",
 ) -> dict[str, Any]:
     """启动一次转换，返回最新的文件元数据。"""
 
@@ -533,6 +535,7 @@ async def start_conversion(
             clear_results(file_id, clear_annotations=True)
 
         token = str(uuid.uuid4())
+        method = (parse_method or "auto").strip().lower() or "auto"
         updated = update_file(
             file_id,
             {
@@ -547,6 +550,7 @@ async def start_conversion(
                 "enable_table": bool(enable_table),
                 "enable_formula": bool(enable_formula),
                 "dpi": int(dpi),
+                "parse_method": method,
             },
         )
         task = asyncio.create_task(
@@ -557,6 +561,7 @@ async def start_conversion(
                     "enable_table": enable_table,
                     "enable_formula": enable_formula,
                     "dpi": dpi,
+                    "parse_method": method,
                 },
                 filename,
                 content_type,
@@ -598,10 +603,12 @@ async def run_queued_conversion(file_id: str) -> bool:
         dpi = int(meta.get("dpi", DEFAULT_DPI))
     except (TypeError, ValueError):
         dpi = DEFAULT_DPI
+    parse_method = str(meta.get("parse_method") or "auto").strip().lower() or "auto"
     worker_options = {
         "enable_table": enable_table,
         "enable_formula": enable_formula,
         "dpi": dpi,
+        "parse_method": parse_method,
     }
     worker_filename = str(meta.get("source_filename") or "source")
 
@@ -630,6 +637,7 @@ async def run_queued_conversion(file_id: str) -> bool:
                 "enable_table": enable_table,
                 "enable_formula": enable_formula,
                 "dpi": dpi,
+                "parse_method": parse_method,
             },
         )
 

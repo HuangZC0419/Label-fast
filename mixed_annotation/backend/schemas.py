@@ -31,9 +31,39 @@ class ProjectCreate(BaseModel):
 
 
 class ProjectPatch(BaseModel):
+    """项目增量更新请求。
+
+    字典字段的语义（多人协同修复，见 docs/多人协同标签覆盖修复.md）：
+
+    - ``labels`` / ``relation_types`` 保留以兼容旧前端包，但**只作为追加项**
+      （与现有字典求并集），收到全量数组也不会删除任何已有条目；
+    - 真正删除必须通过 ``labels_remove`` / ``relation_types_remove``；
+    - 删除仍被标注引用的实体标签需要 ``force=True``，否则服务层返回 409。
+
+    项目级快捷键（见 docs/项目拆分与自定义快捷键.md）：
+
+    - ``shortcuts_set``：``{标签名: 组合键}``，逐项覆盖默认的 1–9；
+    - ``shortcuts_unset``：删除覆盖项，回落到默认（前 9 个标签）或「无快捷键」。
+
+    校验在这里一次完成（去空白、去重、200 字上限），服务层只处理干净列表。
+    快捷键的**格式/保留键/冲突**校验属于业务规则（返回 400/409），
+    由 ``services.shortcut_service`` 完成，这里只做类型与长度收敛。
+    """
+
     name: str | None = Field(default=None, min_length=1, max_length=120)
+    # 旧字段：降级为追加项，防止旧前端整份覆盖别人新增的标签。
     labels: list[str] | None = None
     relation_types: list[str] | None = None
+    # 新字段：显式增量。
+    labels_add: list[str] | None = None
+    labels_remove: list[str] | None = None
+    relation_types_add: list[str] | None = None
+    relation_types_remove: list[str] | None = None
+    # 项目级自定义快捷键：只提交显式覆盖项与清除项。
+    shortcuts_set: dict[str, str] | None = None
+    shortcuts_unset: list[str] | None = None
+    # 删除仍被标注引用的标签时，必须显式确认。
+    force: bool = False
 
     @field_validator("name")
     @classmethod
@@ -45,18 +75,99 @@ class ProjectPatch(BaseModel):
             raise ValueError("项目名称不能为空")
         return value
 
-    @field_validator("labels", "relation_types")
+    @field_validator(
+        "labels",
+        "relation_types",
+        "labels_add",
+        "labels_remove",
+        "relation_types_add",
+        "relation_types_remove",
+        "shortcuts_unset",
+    )
     @classmethod
     def validate_string_lists(cls, value: list[str] | None, info) -> list[str] | None:
         if value is None:
             return None
         return normalize_string_list(value, info.field_name)
 
+    @field_validator("shortcuts_set")
+    @classmethod
+    def validate_shortcuts_set(
+        cls, value: dict[str, str] | None
+    ) -> dict[str, str] | None:
+        if value is None:
+            return None
+        normalized: dict[str, str] = {}
+        for label, shortcut in value.items():
+            key = str(label).strip()
+            if not key:
+                raise ValueError("快捷键对应的标签名不能为空")
+            if len(key) > 200:
+                raise ValueError("快捷键对应的标签名过长")
+            text = str(shortcut).strip()
+            if not text:
+                raise ValueError(f"标签「{key}」的快捷键不能为空")
+            normalized[key] = text
+        return normalized
+
+
+class ProjectSplitGroup(BaseModel):
+    """一组拆分区间：文件序号 1 基、闭区间 ``[start, end]``。
+
+    序号范围、区间重叠、新项目重名等语义校验都依赖项目当前文件总数 N，
+    只能在 ``storage.split_project`` 里完成（失败统一返回 400），
+    因此这里只做类型收敛。
+    """
+
+    name: str = ""
+    start: int
+    end: int
+
+
+class ProjectSplitRequest(BaseModel):
+    """按文件序号区间拆分项目；``groups`` 的顺序就是响应的项目顺序。"""
+
+    groups: list[ProjectSplitGroup] = Field(default_factory=list)
+
+
+class ExcelExportRequest(BaseModel):
+    """多项目标注明细导出请求。
+
+    入参在这里就完成「去空白 + 保序去重」：服务层因此只处理干净的 id 列表，
+    路由层也不需要再做一次防御性清洗。空数组、全空白项都会在 before 校验
+    阶段被拦下并返回中文 422，而不是落到服务层产生空工作簿。
+    """
+
+    project_ids: list[str] = Field(min_length=1, max_length=200)
+
+    @field_validator("project_ids", mode="before")
+    @classmethod
+    def normalize_project_ids(cls, value):
+        # 非列表交给 Pydantic 报类型错误，这里只处理可枚举的序列。
+        if not isinstance(value, (list, tuple)):
+            return value
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for item in value:
+            if not isinstance(item, str):
+                raise ValueError("项目 id 必须是字符串")
+            current = item.strip()
+            if not current or current in seen:
+                continue
+            seen.add(current)
+            normalized.append(current)
+        if not normalized:
+            raise ValueError("请至少选择一个项目")
+        return normalized
+
 
 class ConversionOptions(BaseModel):
     enable_table: bool | None = None
     enable_formula: bool | None = None
     dpi: int | None = Field(default=None, ge=MIN_DPI, le=MAX_DPI)
+    # auto：正常走 MinerU 自动判断（坏文字层会自动转 OCR）；
+    # txt：只用 PDF 文本层；ocr：强制整页 OCR。
+    parse_method: Literal["auto", "txt", "ocr"] | None = None
 
 
 class MarkdownUpdate(BaseModel):

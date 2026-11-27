@@ -4,7 +4,8 @@ import { useRoute } from 'vue-router'
 import { useAuth } from '../composables/useAuth'
 
 const route = useRoute()
-const { state: authState, logout } = useAuth()
+// 顶栏只承担登出动作，用户身份展示已按需求移除
+const { logout } = useAuth()
 
 const moduleTitle = computed(() =>
   typeof route.meta.title === 'string' ? route.meta.title : '标注工作台',
@@ -30,9 +31,6 @@ const moduleEyebrow = computed(() => {
   }
 })
 
-const username = computed(() => authState.user?.username ?? '')
-const userInitial = computed(() => username.value.charAt(0).toUpperCase() || 'L')
-
 function handleLogout(): void {
   logout()
   // 整页跳转以清空图像标注页的模块级共享状态，避免换账号后看到上一账号的数据
@@ -52,10 +50,6 @@ function handleLogout(): void {
     </div>
 
     <div class="user-info">
-      <div class="header-user" :title="username">
-        <span class="header-user-avatar" aria-hidden="true">{{ userInitial }}</span>
-        <span class="username">{{ username }}</span>
-      </div>
       <button type="button" class="logout-btn" @click="handleLogout">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />

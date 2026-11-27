@@ -788,10 +788,16 @@ function handleImageError(): void {
    拖框截图
    ============================================================ */
 
+/**
+ * 按钮与 F3 共用的开关：正在标注 → 退出；否则进入。
+ * 资源未就绪时交给 startCapture 排队，避免按钮「点了没反应」。
+ */
 function toggleCaptureMode(): void {
-  if (!canCapture.value) return
-  captureMode.value = !captureMode.value
-  selection.value = null
+  if (captureMode.value) {
+    exitCaptureMode()
+    return
+  }
+  startCapture()
 }
 
 function exitCaptureMode(): void {
@@ -1211,10 +1217,12 @@ function formatError(cause: unknown): string {
 }
 
 function handleKeydown(event: KeyboardEvent): void {
+  if (event.defaultPrevented) return
   if (event.key === 'Escape' && captureMode.value) {
     event.preventDefault()
     exitCaptureMode()
   }
+  /* F3 由 MixedWorkspace 统一处理：预览未打开时也能先打开面板再进入截图模式。 */
 }
 
 // 延迟请求：资源就绪后自动进入截图模式。
@@ -1233,7 +1241,13 @@ watch(canCapture, (ready) => {
  * - captureRegion：弹窗确认后按 bbox + 页码生成高清截图；
  * - setScrollRatio / getScrollRatio：与 Markdown 画布同步滚动。
  */
-defineExpose({ captureRegion, startCapture, setScrollRatio, getScrollRatio })
+defineExpose({
+  captureRegion,
+  startCapture,
+  toggleCaptureMode,
+  setScrollRatio,
+  getScrollRatio,
+})
 
 /* ============================================================
    生命周期
@@ -1292,14 +1306,19 @@ onBeforeUnmount(() => {
           :class="{ 'is-active': captureMode }"
           :disabled="!canCapture"
           :aria-pressed="captureMode"
-          :title="captureMode ? '退出图片／表格标注（Esc）' : '拖拽框选区域并标注为图片或表格'"
+          :title="
+            captureMode
+              ? '退出图片／表格标注（F3 或 Esc）'
+              : '拖拽框选区域并标注为图片或表格（F3）'
+          "
           @click="toggleCaptureMode"
         >
-          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M6 2v14a2 2 0 0 0 2 2h14" />
             <path d="M18 22V8a2 2 0 0 0-2-2H2" />
           </svg>
           {{ captureMode ? '退出标注' : '图片／表格标注' }}
+          <kbd class="head-capture-kbd" aria-hidden="true">F3</kbd>
         </button>
         <span class="pdf-type">{{ isPdf ? 'PDF' : 'IMG' }}</span>
         <button type="button" class="icon-btn" title="关闭预览" aria-label="关闭预览" @click="emit('close')">
@@ -1311,7 +1330,7 @@ onBeforeUnmount(() => {
     </header>
 
     <div v-if="captureMode" class="capture-banner" role="status">
-      拖拽框选要标注为图片或表格的区域（任意页均可），按 Esc 退出标注模式
+      拖拽框选要标注为图片或表格的区域（任意页均可），按 Esc 或 F3 退出标注模式
     </div>
     <div v-else-if="pendingCapture" class="capture-notice" role="status">
       正在等待预览加载完成，就绪后将自动进入图片／表格标注模式…
@@ -1487,6 +1506,7 @@ onBeforeUnmount(() => {
   --pp-line: var(--line, #e2dccf);
   --pp-line-strong: var(--line-strong, #d2caba);
   --pp-signal: var(--signal, #e4572e);
+  --pp-signal-deep: var(--signal-deep, #c44722);
   --pp-signal-soft: var(--signal-soft, #fbe8e1);
   --pp-signal-ink: var(--signal-ink, #8e2f14);
   --pp-danger: var(--danger, #b5403a);
@@ -1564,44 +1584,91 @@ onBeforeUnmount(() => {
   letter-spacing: 0.08em;
 }
 
+/*
+ * 图片／表格标注是高频核心入口，按「导出 ZIP」同一套主按钮语言处理：
+ * 实心 signal 橙 + 纸色字 + 600 字重，比普通工具按钮更高更宽，并且带 F3 键位徽标。
+ */
 .head-capture {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  height: 28px;
-  padding: 0 9px;
-  border: 1px solid var(--pp-line);
-  border-radius: 7px;
-  background: var(--pp-surface);
-  color: var(--pp-ink-2);
+  gap: 7px;
+  height: 36px;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: var(--pp-signal-deep, #c44722);
+  color: #fffdf9;
   font-family: inherit;
-  font-size: 11px;
-  font-weight: 500;
+  font-size: 13px;
+  font-weight: 600;
   line-height: 1;
   white-space: nowrap;
   cursor: pointer;
+  box-shadow: 0 10px 22px -16px rgba(196, 71, 34, 0.7);
   transition:
     background-color 180ms var(--pp-ease),
     border-color 180ms var(--pp-ease),
-    color 180ms var(--pp-ease);
+    color 180ms var(--pp-ease),
+    box-shadow 180ms var(--pp-ease),
+    transform 180ms var(--pp-ease);
 }
 
 .head-capture:hover:not(:disabled) {
-  border-color: var(--pp-line-strong);
-  background: var(--pp-raised);
-  color: var(--pp-ink);
+  background: var(--pp-signal, #e4572e);
+  color: #fffdf9;
+  box-shadow: 0 14px 28px -16px rgba(196, 71, 34, 0.85);
+  transform: translateY(-1px);
+}
+
+.head-capture:active:not(:disabled) {
+  transform: scale(0.985);
+}
+
+.head-capture:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 3px rgba(228, 87, 46, 0.3),
+    0 14px 28px -16px rgba(196, 71, 34, 0.85);
 }
 
 .head-capture:disabled {
-  opacity: 0.36;
+  opacity: 0.42;
   cursor: not-allowed;
+  box-shadow: none;
 }
 
-.head-capture.is-active {
-  border-color: rgba(228, 87, 46, 0.32);
-  background: var(--pp-signal-soft);
-  color: var(--pp-signal-ink);
+/* 键位徽标：深橙底上用半透明白，避免比主文案更抢眼。 */
+.head-capture-kbd {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 5px;
+  border: 1px solid rgba(255, 253, 249, 0.42);
+  border-radius: 5px;
+  background: rgba(255, 253, 249, 0.16);
+  color: #fffdf9;
+  font-family: var(--pp-mono);
+  font-size: 9.5px;
   font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+/*
+ * 标注进行中：整枚按钮换成深墨底 + 橙色描边。
+ * 与 hover 的亮橙拉开差距，用户一眼能看出「现在正在框选」。
+ */
+.head-capture.is-active {
+  background: var(--pp-ink);
+  border-color: rgba(228, 87, 46, 0.55);
+  color: var(--pp-paper, #f6f3ec);
+  box-shadow:
+    0 0 0 2px rgba(228, 87, 46, 0.22),
+    0 10px 22px -16px rgba(196, 71, 34, 0.6);
+}
+
+.head-capture.is-active:hover:not(:disabled) {
+  background: var(--pp-ink-2);
+  color: var(--pp-paper, #f6f3ec);
 }
 
 .capture-banner,

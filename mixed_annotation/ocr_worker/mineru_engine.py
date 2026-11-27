@@ -449,6 +449,7 @@ def _build_command(
     enable_table: bool,
     enable_formula: bool,
     high_accuracy: bool,
+    parse_method: str | None = None,
 ) -> list[str]:
     command = [
         str(config.MINERU_PYTHON),
@@ -463,7 +464,7 @@ def _build_command(
         "--language",
         config.MINERU_LANGUAGE,
         "--parse-method",
-        config.MINERU_PARSE_METHOD,
+        parse_method or config.MINERU_PARSE_METHOD,
         "--formula",
         "true" if enable_formula else "false",
         "--table",
@@ -662,13 +663,21 @@ def _copy_images(source_dir: Path | None, target_dir: Path) -> int:
     return count
 
 
-def build_api_form_data(enable_table: bool, enable_formula: bool) -> dict[str, str]:
-    """构造 ``POST /tasks`` 的 multipart 表单字段（纯函数，便于单测）。"""
+def build_api_form_data(
+    enable_table: bool,
+    enable_formula: bool,
+    parse_method: str | None = None,
+) -> dict[str, str]:
+    """构造 ``POST /tasks`` 的 multipart 表单字段（纯函数，便于单测）。
+
+    ``parse_method`` 为空时沿用 ``MINERU_PARSE_METHOD``；检测到 PDF 文本层
+    编码异常时会显式传 ``ocr``，强制按页面图像识别。
+    """
 
     return {
         "lang_list": config.MINERU_LANGUAGE,
         "backend": config.MINERU_BACKEND,
-        "parse_method": config.MINERU_PARSE_METHOD,
+        "parse_method": (parse_method or config.MINERU_PARSE_METHOD),
         "formula_enable": "true" if enable_formula else "false",
         "table_enable": "true" if enable_table else "false",
         "return_md": "true",
@@ -802,6 +811,7 @@ def _convert_via_api(
     enable_formula: bool,
     dpi: int,
     progress: ProgressCallback | None = None,
+    parse_method: str | None = None,
 ) -> "ConversionResult":
     """通过常驻 `mineru-api` 转换文档并归一化结果。"""
 
@@ -827,7 +837,9 @@ def _convert_via_api(
                 files = [("files", (source_path.name, handle, media_type))]
                 response = client.post(
                     f"{base_url}/tasks",
-                    data=build_api_form_data(enable_table, enable_formula),
+                    data=build_api_form_data(
+                        enable_table, enable_formula, parse_method
+                    ),
                     files=files,
                 )
             _raise_for_status(response, "提交 MinerU API 任务")
@@ -970,6 +982,7 @@ def _convert_via_subprocess(
     enable_formula: bool,
     dpi: int,
     progress: ProgressCallback | None = None,
+    parse_method: str | None = None,
 ) -> "ConversionResult":
     """用 CFwin11 内的 MinerU 子进程转换文档（每次任务重新加载模型）。"""
 
@@ -989,6 +1002,7 @@ def _convert_via_subprocess(
         enable_table=enable_table,
         enable_formula=enable_formula,
         high_accuracy=high_accuracy,
+        parse_method=parse_method,
     )
     report(3, "启动 MinerU GPU", None)
     _run_mineru_subprocess(
@@ -1016,6 +1030,7 @@ def convert_with_mineru(
     enable_formula: bool,
     dpi: int,
     progress: ProgressCallback | None = None,
+    parse_method: str | None = None,
 ) -> "ConversionResult":
     """用 MinerU GPU 转换文档并归一化到 Worker 的结果契约。
 
@@ -1040,6 +1055,7 @@ def convert_with_mineru(
         "enable_formula": enable_formula,
         "dpi": dpi,
         "progress": report,
+        "parse_method": parse_method,
     }
 
     if mode == "subprocess":

@@ -1,9 +1,15 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import type { MixedFile, Project } from '../types'
+import ProjectSwitcher from './project/ProjectSwitcher.vue'
 
-type MenuAction = 'settings' | 'delete'
-
+/**
+ * 混合标注模块头：项目切换器 + 设置菜单 + 工作区插槽 + 导出动作。
+ *
+ * 项目切换/新建由 ProjectSwitcher 负责；项目设置与删除由独立的「设置」菜单承载。
+ * `workspace` 具名插槽用于承载 MixedWorkspace Teleport 过来的文件头
+ * （文件标题、状态、模式切换、预览与同步滚动），从而把原来的两行合并成一行。
+ */
 const props = defineProps<{
   projects: Project[]
   currentProject: Project | null
@@ -11,8 +17,12 @@ const props = defineProps<{
   fileStatusLabel: string
   /** 父组件正在导出项目 ZIP；用于禁用重复点击并切换按钮文案。 */
   exporting?: boolean
+  /** 父组件正在生成标注明细 Excel；用于禁用重复点击并切换按钮文案。 */
+  excelExporting?: boolean
   /** 批量导入/保存期间锁定项目切换，避免写入错误项目。 */
   projectSwitchDisabled?: boolean
+  /** 当前项目没有可拆分的文件时禁用「拆分项目」入口。 */
+  splitDisabled?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -20,9 +30,19 @@ const emit = defineEmits<{
   create: []
   /** 打开项目设置弹窗（名称 + 转换参数）。 */
   settings: []
+  /** 打开项目按文件序号区间拆分弹窗。 */
+  'split-project': []
   'delete-project': []
+  /** 打开导入弹窗（拖拽/选择文件/选择文件夹 + 上传进度 + 队列统计）。 */
+  import: []
+  /** 打开当前文件的「重新 OCR」参数弹窗。 */
+  reconvert: []
   export: []
+  /** 打开「导出 Excel 表单」弹窗（可多选项目）。 */
+  'export-excel': []
 }>()
+
+type MenuAction = 'settings' | 'split' | 'delete'
 
 /* ------------------------------------------------------------------ */
 /* 项目操作菜单                                                        */
@@ -46,6 +66,7 @@ function choose(action: MenuAction): void {
   // 菜单项随菜单卸载，先把焦点交回触发按钮，便于弹窗关闭后恢复焦点。
   menuButtonRef.value?.focus()
   if (action === 'delete') emit('delete-project')
+  else if (action === 'split') emit('split-project')
   else emit('settings')
 }
 
@@ -69,51 +90,22 @@ onBeforeUnmount(() => {
   document.removeEventListener('pointerdown', onDocumentPointerDown)
   document.removeEventListener('keydown', onDocumentKeydown)
 })
-
-function onProjectChange(event: Event): void {
-  const id = (event.target as HTMLSelectElement).value
-  if (id) emit('select-project', id)
-}
 </script>
 
 <template>
   <div class="mx-header">
-    <label class="header-project">
-      <span class="sr-only">当前项目</span>
-      <select
-        class="mx-input header-select"
-        :value="currentProject?.id ?? ''"
-        :disabled="projects.length === 0 || projectSwitchDisabled"
-        :title="projectSwitchDisabled ? '当前操作进行中，暂时无法切换项目' : undefined"
-        @change="onProjectChange"
-      >
-        <option value="" disabled>{{ projects.length ? '选择项目' : '暂无项目' }}</option>
-        <option v-for="project in projects" :key="project.id" :value="project.id">
-          {{ project.name }}
-        </option>
-      </select>
-    </label>
+    <!-- 项目切换器：触发器展示当前项目，下拉内承载列表与「新建项目」。 -->
+    <div class="header-project">
+      <ProjectSwitcher
+        :projects="projects"
+        :current-project="currentProject"
+        :project-switch-disabled="projectSwitchDisabled"
+        @select-project="emit('select-project', $event)"
+        @create="emit('create')"
+      />
+    </div>
 
-    <button
-      type="button"
-      class="mx-btn mx-btn-icon header-create"
-      title="新建项目"
-      aria-label="新建项目"
-      :disabled="projectSwitchDisabled"
-      @click="emit('create')"
-    >
-      <svg
-        viewBox="0 0 16 16"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1.5"
-        stroke-linecap="round"
-        aria-hidden="true"
-      >
-        <path d="M8 3v10M3 8h10" />
-      </svg>
-    </button>
-
+    <!-- 设置菜单：项目设置与删除项目，与切换器分离。 -->
     <div ref="menuRef" class="header-menu">
       <button
         ref="menuButtonRef"
@@ -137,6 +129,16 @@ function onProjectChange(event: Event): void {
         <button type="button" role="menuitem" class="header-menu-item" @click="choose('settings')">
           项目设置
         </button>
+        <button
+          type="button"
+          role="menuitem"
+          class="header-menu-item"
+          :disabled="!currentProject || splitDisabled"
+          :title="splitDisabled ? '当前项目没有可拆分的文件' : '按文件序号区间拆分为多个新项目'"
+          @click="choose('split')"
+        >
+          拆分项目
+        </button>
         <div class="header-menu-sep" role="separator"></div>
         <button type="button" role="menuitem" class="header-menu-item is-danger" @click="choose('delete')">
           删除项目
@@ -144,17 +146,119 @@ function onProjectChange(event: Event): void {
       </div>
     </div>
 
-    <div v-if="selectedFile" class="header-file" :title="selectedFile.name">
-      <span class="file-state-dot" :class="`is-${selectedFile.status}`" aria-hidden="true" />
-      <span class="header-file-name">{{ selectedFile.name }}</span>
-      <span class="header-file-state">{{ fileStatusLabel }}</span>
-    </div>
-    <div v-else class="header-file is-empty">
-      <span class="file-state-dot" aria-hidden="true" />
-      <span class="header-file-state">未选择文件</span>
+    <!--
+      导入入口：原来在左侧栏底部，占用纵向空间且要先把视线移到侧栏。
+      现在与「设置」同排，成为模块头的显性动作，点开即弹上传窗口。
+    -->
+    <button
+      type="button"
+      class="header-import"
+      :disabled="!currentProject"
+      :title="
+        !currentProject
+          ? '请先新建或选择项目'
+          : '导入数据：PDF / 图片，支持整个文件夹'
+      "
+      @click="emit('import')"
+    >
+      <svg
+        viewBox="0 0 16 16"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.5"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M8 10.5V2.5" />
+        <path d="m4.8 5.7 3.2-3.2 3.2 3.2" />
+        <path d="M2.8 11v1.8a1.2 1.2 0 0 0 1.2 1.2h8a1.2 1.2 0 0 0 1.2-1.2V11" />
+      </svg>
+      导入数据
+    </button>
+
+    <!--
+      重新 OCR：紧挨「导入数据」，针对当前选中文件重新识别。
+      打开参数弹窗，可调 DPI / 解析方式 / 表格与公式识别；会清空该文件已有标注。
+    -->
+    <button
+      type="button"
+      class="header-reconvert"
+      :disabled="!selectedFile || selectedFile.status === 'converting' || !currentProject"
+      :title="
+        !currentProject
+          ? '请先选择项目'
+          : !selectedFile
+            ? '请先选择要重新识别的文件'
+            : '重新 OCR：调整识别精度后重新转换当前文件'
+      "
+      @click="emit('reconvert')"
+    >
+      <svg
+        viewBox="0 0 16 16"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.5"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M13.6 6.6A5.6 5.6 0 1 0 14 9.2" />
+        <path d="M13.8 2.8v3.9h-3.9" />
+      </svg>
+      重新 OCR
+    </button>
+
+    <!--
+      工作区插槽：MixedWorkspace 用 Teleport 把「文件标题 + 状态 + 视图控件」
+      搬进模块头，让模块头与工作区文件头合并为一行，省掉一整行高度留给标注区。
+    -->
+    <div class="header-workspace">
+      <slot name="workspace" />
     </div>
 
+    <!--
+      文件状态胶囊只在没有工作区插槽时出现：有插槽时文件标题已由工作区行展示，
+      再显示一遍既重复又占宽度。
+    -->
+    <template v-if="!$slots.workspace">
+      <div v-if="selectedFile" class="header-file" :title="selectedFile.name">
+        <span class="file-state-dot" :class="`is-${selectedFile.status}`" aria-hidden="true" />
+        <span class="header-file-name">{{ selectedFile.name }}</span>
+        <span class="header-file-state">{{ fileStatusLabel }}</span>
+      </div>
+      <div v-else class="header-file is-empty">
+        <span class="file-state-dot" aria-hidden="true" />
+        <span class="header-file-state">未选择文件</span>
+      </div>
+    </template>
+
     <div class="header-actions">
+      <!-- Excel 次级动作：可多选项目；用 accent 描边按钮提亮，但仍弱于 ZIP 主按钮。 -->
+      <button
+        type="button"
+        class="mx-btn header-export-excel"
+        :disabled="projects.length === 0 || excelExporting"
+        title="导出标注明细 Excel（可选择多个项目）"
+        @click="emit('export-excel')"
+      >
+        <svg
+          viewBox="0 0 16 16"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.4"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <rect x="2.5" y="3.5" width="11" height="9" rx="1.2" />
+          <path d="M2.5 6.6h11" />
+          <path d="M6.4 3.5v9" />
+          <path d="M6.4 9.8h7.1" />
+        </svg>
+        {{ excelExporting ? '导出中…' : '导出 Excel 表单' }}
+      </button>
+
       <button
         type="button"
         class="mx-btn mx-btn-primary header-export"
@@ -180,3 +284,4 @@ function onProjectChange(event: Event): void {
     </div>
   </div>
 </template>
+
