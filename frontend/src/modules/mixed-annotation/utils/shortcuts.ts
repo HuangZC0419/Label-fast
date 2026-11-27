@@ -239,8 +239,26 @@ export function effectiveShortcuts(
 }
 
 /**
+ * 数字主键统一按**物理按键**识别（Digit1–9 / Numpad1–9）。
+ *
+ * 这样能覆盖不同键盘/输入法下的差异：
+ * - 非 US 布局（如 AZERTY）需要 Shift 才能打出数字，`event.key` 不是 "1"；
+ * - 小键盘关闭 NumLock 时 `event.key` 会变成 End / ArrowDown；
+ * - 部分中文输入法把 `event.key` 报成 "Process"。
+ * `event.code` 在这些情况下仍然稳定。
+ */
+export function digitFromKeyboardEvent(event: KeyboardEvent): string {
+  const code = typeof event.code === 'string' ? event.code : ''
+  const matched = /^(?:Digit|Numpad)([1-9])$/.exec(code)
+  if (matched) return matched[1]
+  const key = typeof event.key === 'string' ? event.key : ''
+  return /^[1-9]$/.test(key) ? key : ''
+}
+
+/**
  * 从键盘事件推导规范化组合键。
  *
+ * - 数字主键按物理位置识别，不依赖键盘布局/输入法（见 `digitFromKeyboardEvent`）；
  * - 纯修饰键（Ctrl/Shift/…）返回空串，调用方据此继续等待下一次按键；
  * - 单个字母在无修饰键时保持小写（`q`），带修饰键时大写（`Ctrl+K`），
  *   与后端持久化形式一致；
@@ -250,6 +268,18 @@ export function effectiveShortcuts(
  * - `Meta`（macOS 的 ⌘ / Windows 键）统一折算为 `Ctrl`，与后端修饰键集合对齐。
  */
 export function comboFromKeyboardEvent(event: KeyboardEvent): string {
+  /*
+   * 数字键：不同键盘布局下「1」可能是 Shift+&，小键盘关 NumLock 时是 End；
+   * 统一用物理键位，且不把 Shift 计入数字组合，避免同一颗键录到不同结果。
+   */
+  const digit = digitFromKeyboardEvent(event)
+  if (digit) {
+    const digitModifiers: string[] = []
+    if (event.ctrlKey || event.metaKey) digitModifiers.push('Ctrl')
+    if (event.altKey) digitModifiers.push('Alt')
+    return [...digitModifiers, digit].join('+')
+  }
+
   // 空格的 `event.key` 是一个空格字符，先折算成具名键再参与规范化。
   const rawKey = typeof event.key === 'string'
     ? event.key === ' '

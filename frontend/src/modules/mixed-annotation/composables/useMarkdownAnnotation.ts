@@ -13,6 +13,7 @@ import {
 import type { TextMap } from '../utils/markdown'
 import {
   comboFromKeyboardEvent,
+  digitFromKeyboardEvent,
   effectiveShortcuts,
   isReservedShortcut,
   shortcutIndex,
@@ -746,9 +747,23 @@ export function useMarkdownAnnotation(options: UseMarkdownAnnotationOptions) {
   }
 
   function handleKeydown(event: KeyboardEvent): void {
-    if (event.defaultPrevented || event.isComposing) return
+    if (event.defaultPrevented) return
     if (options.isActive && !options.isActive()) return
     if (isEditableTarget(event.target) || isInsideDialog(event.target)) return
+    /*
+     * 部分中文输入法在正文区域仍会把 isComposing 置位（并没有真正在输入框里打字），
+     * 导致数字标签快捷键被整体拦掉。这里只放行「已有待标注选区/待选关系 + 物理数字键」，
+     * 不影响输入框内的中文输入（上面已经排除可编辑目标）。
+     */
+    if (event.isComposing) {
+      const composingDigit = digitFromKeyboardEvent(event)
+      if (
+        !composingDigit ||
+        (!pendingSelection.value && !pendingRelation.value)
+      ) {
+        return
+      }
+    }
 
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z' && !event.shiftKey) {
       if (canUndo.value) {
@@ -783,14 +798,16 @@ export function useMarkdownAnnotation(options: UseMarkdownAnnotationOptions) {
 
     // Ctrl+1–9 属于关系快捷键，永远优先于标签快捷键：
     // 即使某个标签自定义了组合键，也不能劫持待选关系时的 Ctrl+数字。
+    // 数字按物理键识别，兼容需要 Shift 才能打出数字的键盘布局与小键盘。
+    const relationDigit = digitFromKeyboardEvent(event)
     if (
       (event.ctrlKey || event.metaKey) &&
       !event.altKey &&
       !event.shiftKey &&
-      /^[1-9]$/.test(event.key)
+      relationDigit
     ) {
       if (!pendingRelation.value) return
-      const type = options.relationTypes()[Number(event.key) - 1]
+      const type = options.relationTypes()[Number(relationDigit) - 1]
       if (!type) return
       event.preventDefault()
       applyRelation(type)
