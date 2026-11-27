@@ -35,6 +35,8 @@ const emit = defineEmits<{
   restore: []
   /** 打开项目级快捷键设置弹窗。 */
   'edit-shortcuts': []
+  /** 打开「从其他项目导入实体标签」弹窗。 */
+  'import-labels': []
 }>()
 
 type DictionarySection = 'labels' | 'relation_types'
@@ -547,16 +549,26 @@ onBeforeUnmount(() => {
             <h3 class="dict-section-name">实体标签</h3>
             <span class="dict-count">{{ labels.length }} 个</span>
           </div>
-          <button
-            ref="labelsEditBtn"
-            type="button"
-            class="dict-edit-btn"
-            :aria-expanded="isEditingLabels"
-            aria-controls="dict-labels-chips"
-            @click="toggleSection('labels')"
-          >
-            {{ isEditingLabels ? '完成' : '编辑' }}
-          </button>
+          <div class="dict-section-actions">
+            <button
+              type="button"
+              class="dict-import-btn"
+              title="从其他项目导入实体标签"
+              @click="emit('import-labels')"
+            >
+              导入标签
+            </button>
+            <button
+              ref="labelsEditBtn"
+              type="button"
+              class="dict-edit-btn"
+              :aria-expanded="isEditingLabels"
+              aria-controls="dict-labels-chips"
+              @click="toggleSection('labels')"
+            >
+              {{ isEditingLabels ? '完成' : '编辑' }}
+            </button>
+          </div>
         </div>
 
         <div
@@ -1025,6 +1037,39 @@ onBeforeUnmount(() => {
   font-variant-numeric: tabular-nums;
   color: var(--ink-4);
   white-space: nowrap;
+}
+
+.dict-section-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* 从其他项目导入：浅signal底 + 细描边，和「编辑」同排但更主动作。 */
+.dict-import-btn {
+  height: 22px;
+  padding: 0 7px;
+  border: 1px solid rgba(228, 87, 46, 0.35);
+  border-radius: var(--radius-sm);
+  background: var(--signal-soft);
+  color: var(--signal-ink);
+  font-family: inherit;
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 160ms var(--ease-out),
+    border-color 160ms var(--ease-out),
+    color 160ms var(--ease-out);
+}
+
+.dict-import-btn:hover {
+  border-color: var(--signal);
+  background: #F7DACF;
+  color: var(--signal-deep);
 }
 
 .dict-edit-btn {

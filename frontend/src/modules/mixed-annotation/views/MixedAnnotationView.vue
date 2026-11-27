@@ -11,6 +11,7 @@ import SplitProjectDialog from '../components/project/SplitProjectDialog.vue'
 import ShortcutSettingsDialog from '../components/project/ShortcutSettingsDialog.vue'
 import ImportDialog from '../components/project/ImportDialog.vue'
 import ReconvertDialog from '../components/project/ReconvertDialog.vue'
+import ImportLabelsDialog from '../components/project/ImportLabelsDialog.vue'
 import ConfirmDialog from '../components/common/ConfirmDialog.vue'
 import EmptyState from '../components/common/EmptyState.vue'
 import MixedWorkspace from '../components/workspace/MixedWorkspace.vue'
@@ -1864,6 +1865,17 @@ async function reconvertSelectedFile(): Promise<void> {
   await retryFile(file)
 }
 
+/* 「从其他项目导入实体标签」弹窗：只做选择，写入复用字典增量保存链路。 */
+const importLabelsOpen = ref(false)
+
+function handleImportLabels(labels: string[]): void {
+  const project = currentProject.value
+  if (!project || labels.length === 0) return
+  importLabelsOpen.value = false
+  handleDictionarySave({ labels_add: labels })
+  setNotice('info', `正在把 ${labels.length} 个标签导入「${project.name}」`)
+}
+
 /* ------------------------------------------------------------------ */
 /* 轮询转换状态                                                        */
 /* ------------------------------------------------------------------ */
@@ -2131,6 +2143,7 @@ onUnmounted(() => {
           @save="handleDictionarySave"
           @restore="restoreMissingLabels"
           @edit-shortcuts="openShortcutDialog"
+          @import-labels="importLabelsOpen = true"
         />
 
         <!--
@@ -2301,6 +2314,15 @@ onUnmounted(() => {
       :busy="splitBusy"
       :error="splitError"
       @submit="submitSplit"
+    />
+
+    <!-- 从其他项目导入实体标签：勾选后走字典增量保存。 -->
+    <ImportLabelsDialog
+      :open="importLabelsOpen"
+      :project-id="currentProject?.id ?? ''"
+      :existing-labels="currentProject?.labels ?? []"
+      @close="importLabelsOpen = false"
+      @submit="handleImportLabels"
     />
 
     <!-- 重新 OCR：参数设置弹窗（按当前选中文件生效）。 -->

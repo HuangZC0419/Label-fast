@@ -15,6 +15,7 @@
 | PATCH | `/api/projects/{pid}` | 增量更新名称/实体标签/关系类型（只增不减，见下） |
 | GET | `/api/projects/{pid}/labels/usage` | 实体/段落标签引用计数 + 字典缺失标签 |
 | POST | `/api/projects/{pid}/labels/restore` | 把被引用但字典缺失的标签补回字典 |
+| GET | `/api/labels/catalog?exclude={pid}` | 跨项目汇总实体标签：`{label, project_count, usage_count}`，供导入标签弹窗 |
 | POST | `/api/projects/{pid}/split` | 按文件序号区间拆成多个新项目（文件移动，源项目保留） |
 | DELETE | `/api/projects/{pid}` | 删除项目及其数据 |
 | GET | `/api/projects/{pid}/export-zip` | 导出 ZIP：原始文件 + Markdown + 图表资产 + `annotations.jsonl` + `graph.jsonl` |

@@ -166,6 +166,34 @@ export async function fetchBlocks(fileId: string): Promise<BlocksPayload> {
 }
 
 /* ============================================================
+   跨项目标签目录
+   ============================================================ */
+
+export interface LabelCatalogEntry {
+  label: string
+  /** 有多少个项目的字典包含该标签。 */
+  project_count: number
+  /** 跨项目被标注引用的总条数。 */
+  usage_count: number
+}
+
+/**
+ * 汇总所有项目的实体标签（可按当前项目排除）。
+ * 打开「导入标签」弹窗时调用一次。
+ */
+export async function fetchLabelCatalog(
+  excludeProjectId?: string,
+): Promise<LabelCatalogEntry[]> {
+  const query = excludeProjectId
+    ? `?exclude=${encodeURIComponent(excludeProjectId)}`
+    : ''
+  const payload = await apiFetch<{ labels?: LabelCatalogEntry[] }>(
+    `/api/labels/catalog${query}`,
+  )
+  return Array.isArray(payload?.labels) ? payload.labels : []
+}
+
+/* ============================================================
    图表（拖框截图）
    ============================================================ */
 

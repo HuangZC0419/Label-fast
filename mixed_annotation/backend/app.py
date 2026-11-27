@@ -19,7 +19,7 @@ from config import (
     OCR_WORKER_URL,
 )
 from errors import ServiceError
-from routes import annotations, export, figures, files, projects
+from routes import annotations, export, figures, files, labels, projects
 from services import conversion_service, queue_service
 from storage import (
     cleanup_stale_uploads,
@@ -155,6 +155,7 @@ app.include_router(projects.router)
 app.include_router(files.router)
 app.include_router(annotations.router)
 app.include_router(figures.router)
+app.include_router(labels.router)
 app.include_router(export.router)
 
 

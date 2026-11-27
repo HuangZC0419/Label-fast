@@ -645,6 +645,75 @@ def project_label_usage(project_id: str) -> dict[str, int]:
         return counter
 
 
+def label_catalog(exclude_project_id: str | None = None) -> list[dict[str, Any]]:
+    """跨项目汇总实体标签：字典里出现过的标签 + 实际标注引用次数。
+
+    返回 ``[{label, project_count, usage_count}]``，按引用数、项目数降序排列。
+    ``exclude_project_id`` 用于导入弹窗排除当前项目，避免把自己已有的标签列出来。
+    只读取 project.json / annotations.json，不修改任何数据。
+    """
+
+    excluded = str(exclude_project_id or "").strip()
+    counts: dict[str, dict[str, int]] = {}
+
+    def entry(label: str) -> dict[str, int]:
+        return counts.setdefault(label, {"project_count": 0, "usage_count": 0})
+
+    for summary in list_projects():
+        pid = str(summary.get("id") or "")
+        if not pid or pid == excluded:
+            continue
+
+        try:
+            project = get_project(pid)
+        except (NotFoundError, ServiceError):
+            # 项目目录损坏不应让整个标签目录接口失败。
+            project = summary
+
+        for label in _dictionary_field(project, "labels"):
+            entry(label)["project_count"] += 1
+
+        files_dir = _project_dir(pid) / "files"
+        if not files_dir.is_dir():
+            continue
+
+        counter: dict[str, int] = {}
+        for child in sorted(files_dir.iterdir(), key=lambda path: path.name):
+            if not child.is_dir():
+                continue
+            annotation_path = child / "annotations.json"
+            if not annotation_path.is_file():
+                continue
+            try:
+                data = _read_json(annotation_path, None)
+            except (ServiceError, OSError):
+                logger.warning(
+                    "标签目录跳过无法读取的标注：%s", annotation_path
+                )
+                continue
+            _collect_label_counts(data, counter)
+
+        for label, count in counter.items():
+            entry(label)["usage_count"] += count
+
+    rows = [
+        {
+            "label": label,
+            "project_count": values["project_count"],
+            "usage_count": values["usage_count"],
+        }
+        for label, values in counts.items()
+    ]
+    rows.sort(
+        key=lambda row: (
+            -int(row["usage_count"]),
+            -int(row["project_count"]),
+            str(row["label"]),
+        )
+    )
+    return rows
+
+
 def project_label_usage_report(project_id: str) -> dict[str, Any]:
     """``GET /labels/usage`` 的响应体：全部引用计数 + 字典缺失标签。
 
